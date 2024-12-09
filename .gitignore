@@ -5,3 +5,7 @@
 *.npy
 __pycache__/
 wandb
+*.csv
+*.tar
+*.tar.gz
+*.zip

@@ -9,26 +9,92 @@ from tqdm import tqdm
 import wandb
 import argparse
 from datetime import datetime
+import numpy as np
+from torch.cuda.amp import autocast
+from torch.nn.parallel import DistributedDataParallel as DDP
+import math
+import sys
+import logging
+from contextlib import nullcontext
 
 from src.models.model import MusicGenerationTransformer, MIDITokenizer
 from src.data.dataset import get_dataset
 
+class EarlyStopping:
+    def __init__(self, patience=10, min_delta=0.0001, mode='min'):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.mode = mode
+        self.counter = 0
+        self.best_loss = None
+        self.early_stop = False
+        self.min_validation_loss = float('inf') if mode == 'min' else float('-inf')
+    
+    def __call__(self, validation_loss):
+        if self.mode == 'min':
+            if validation_loss < self.min_validation_loss - self.min_delta:
+                self.min_validation_loss = validation_loss
+                self.counter = 0
+            else:
+                self.counter += 1
+        else:
+            if validation_loss > self.min_validation_loss + self.min_delta:
+                self.min_validation_loss = validation_loss
+                self.counter = 0
+            else:
+                self.counter += 1
+                
+        if self.counter >= self.patience:
+            self.early_stop = True
+            
+        return self.early_stop
+
+class GradientFlow:
+    def __init__(self, model):
+        self.model = model
+        self.gradients = {}
+        
+    def log_gradients(self):
+        for name, param in self.model.named_parameters():
+            if param.requires_grad and param.grad is not None:
+                self.gradients[f"gradients/{name}"] = {
+                    'mean': param.grad.abs().mean().item(),
+                    'std': param.grad.std().item(),
+                    'max': param.grad.abs().max().item()
+                }
+        return self.gradients
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Music Generation Training Script')
     
-    # Training hyperparameters
-    parser.add_argument('--batch_size', type=int, default=1,
-                        help='Batch size for training (default: 4)')
-    parser.add_argument('--gradient_accumulation_steps', type=int, default=16,
-                        help='Number of gradient accumulation steps (default: 4)')
+    # Enhanced training hyperparameters
+    parser.add_argument('--batch_size', type=int, default=32,
+                        help='Batch size for training (default: 32)')
+    parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
+                        help='Number of gradient accumulation steps (default: 1)')
     parser.add_argument('--epochs', type=int, default=100,
                         help='Number of epochs to train (default: 100)')
-    parser.add_argument('--lr', type=float, default=1e-4,
-                        help='Learning rate (default: 1e-4)')
+    parser.add_argument('--lr', type=float, default=2e-4,
+                        help='Learning rate (default: 2e-4)')
+    parser.add_argument('--min_lr', type=float, default=1e-6,
+                        help='Minimum learning rate (default: 1e-6)')
     parser.add_argument('--weight_decay', type=float, default=0.01,
                         help='Weight decay for AdamW (default: 0.01)')
-    parser.add_argument('--warmup_steps', type=int, default=1000,
+    parser.add_argument('--warmup_steps', type=int, default=2000,
                         help='Number of warmup steps for learning rate scheduler')
+    parser.add_argument('--patience', type=int, default=10,
+                        help='Patience for early stopping (default: 10)')
+    parser.add_argument('--label_smoothing', type=float, default=0.1,
+                        help='Label smoothing factor (default: 0.1)')
+    
+    # H100 optimizations
+    parser.add_argument('--precision', type=str, default='bf16', 
+                        choices=['fp32', 'fp16', 'bf16'],
+                        help='Training precision (default: bf16)')
+    parser.add_argument('--gradient_checkpointing', action='store_true',
+                        help='Enable gradient checkpointing to save memory')
+    parser.add_argument('--compile', action='store_true',
+                        help='Use torch.compile() for faster training')
     
     # Model configuration
     parser.add_argument('--d_model', type=int, default=1024,
@@ -64,6 +130,17 @@ def parse_args():
     
     return parser.parse_args()
 
+def setup_logging(save_dir):
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(save_dir / 'training.log'),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+    return logging.getLogger(__name__)
+
 def create_model(args):
     tokenizer = MIDITokenizer()
     model = MusicGenerationTransformer(
@@ -75,30 +152,73 @@ def create_model(args):
         dim_feedforward=args.dim_feedforward,
         dropout=args.dropout,
         max_seq_length=1024,
-        tokenizer=tokenizer
+        tokenizer=tokenizer,
+        label_smoothing=args.label_smoothing
     )
+    
+    if args.gradient_checkpointing:
+        model.gradient_checkpointing_enable()
+    
+    if args.compile:
+        model = torch.compile(model)
+    
     return model
 
-def get_lr_scheduler(optimizer, args, total_steps):
-    from transformers import get_linear_schedule_with_warmup
-    return get_linear_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=args.warmup_steps,
-        num_training_steps=total_steps
-    )
-
-# Add this at the top with other imports
 def scheduled_teacher_forcing(epoch, min_ratio=0.2, max_ratio=1.0, num_epochs=100):
-    """Calculate teacher forcing ratio based on training progress"""
+    """Calculate teacher forcing ratio based on training progress.
+    
+    Args:
+        epoch (int): Current training epoch
+        min_ratio (float): Minimum teacher forcing ratio (default: 0.2)
+        max_ratio (float): Maximum teacher forcing ratio (default: 1.0)
+        num_epochs (int): Total number of training epochs (default: 100)
+    
+    Returns:
+        float: Teacher forcing ratio for current epoch
+    """
     ratio = max_ratio - (max_ratio - min_ratio) * (epoch / num_epochs)
     return max(min_ratio, ratio)
 
-# Update train_one_batch function
-def train_one_batch(model, batch, optimizer, scheduler, scaler, criterion, device, epoch, args, accumulating=True):
-    images = batch['image'].to(device)
-    tokens = batch['tokens'].to(device)
+def get_lr_scheduler(optimizer, args, total_steps):
+    """Creates a learning rate scheduler with linear warmup and cosine decay.
     
-    with amp.autocast('cuda'):
+    Args:
+        optimizer: The optimizer to schedule
+        args: Training arguments containing warmup_steps and min_lr
+        total_steps: Total number of training steps
+    
+    Returns:
+        torch.optim.lr_scheduler: Learning rate scheduler
+    """
+    from torch.optim.lr_scheduler import LambdaLR
+    
+    def lr_lambda(current_step):
+        # Warmup phase
+        if current_step < args.warmup_steps:
+            return float(current_step) / float(max(1, args.warmup_steps))
+        
+        # Cosine decay with minimum learning rate
+        progress = float(current_step - args.warmup_steps) / float(max(1, total_steps - args.warmup_steps))
+        cosine_decay = 0.5 * (1 + math.cos(math.pi * progress))
+        
+        # Scale between 1.0 and minimum learning rate
+        return max(args.min_lr / args.lr, cosine_decay)
+    
+    return LambdaLR(optimizer, lr_lambda)
+
+def train_one_batch(model, batch, optimizer, scheduler, scaler, criterion, device, epoch, args, accumulating=True):
+    images = batch['image'].to(device, non_blocking=True)
+    tokens = batch['tokens'].to(device, non_blocking=True)
+    
+    autocast_dtype = {
+        'fp32': torch.float32,
+        'fp16': torch.float16,
+        'bf16': torch.bfloat16
+    }[args.precision]
+    
+    autocast_context = autocast(device_type='cuda', dtype=autocast_dtype) if args.precision != 'fp32' else nullcontext()
+    
+    with autocast_context:
         teacher_ratio = scheduled_teacher_forcing(
             epoch,
             min_ratio=0.2,
@@ -112,25 +232,66 @@ def train_one_batch(model, batch, optimizer, scheduler, scaler, criterion, devic
             shift_logits.view(-1, shift_logits.size(-1)),
             shift_labels.view(-1)
         )
-        # Scale loss for gradient accumulation
         if accumulating:
             loss = loss / args.gradient_accumulation_steps
     
-    scaler.scale(loss).backward()
+    if scaler is not None:
+        scaler.scale(loss).backward()
+    else:
+        loss.backward()
     
-    # Only optimize after accumulating enough gradients
     if not accumulating:
-        scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
-        scaler.step(optimizer)
-        scaler.update()
-        optimizer.zero_grad()
+        if scaler is not None:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+            optimizer.step()
+            
+        optimizer.zero_grad(set_to_none=True)
         scheduler.step()
     
     return loss.item() * (args.gradient_accumulation_steps if accumulating else 1)
 
+def validate(model, val_loader, criterion, device, args):
+    model.eval()
+    total_loss = 0
+    num_batches = 0
+    
+    autocast_dtype = {
+        'fp32': torch.float32,
+        'fp16': torch.float16,
+        'bf16': torch.bfloat16
+    }[args.precision]
+    
+    autocast_context = autocast(device_type='cuda', dtype=autocast_dtype) if args.precision != 'fp32' else nullcontext()
+    
+    with torch.no_grad(), autocast_context:
+        for batch in val_loader:
+            images = batch['image'].to(device, non_blocking=True)
+            tokens = batch['tokens'].to(device, non_blocking=True)
+            
+            outputs = model(images, tokens)
+            shift_logits = outputs[..., :-1, :].contiguous()
+            shift_labels = tokens[..., 1:].contiguous()
+            loss = criterion(
+                shift_logits.view(-1, shift_logits.size(-1)),
+                shift_labels.view(-1)
+            )
+            
+            total_loss += loss.item()
+            num_batches += 1
+            
+    return total_loss / num_batches
+
 def train(args):
-    # Initialize wandb
+    # Setup
+    save_dir = Path(args.save_dir) / args.run_name
+    save_dir.mkdir(parents=True, exist_ok=True)
+    logger = setup_logging(save_dir)
+    
     if args.run_name is None:
         args.run_name = datetime.now().strftime("%Y%m%d_%H%M%S")
     
@@ -140,12 +301,12 @@ def train(args):
         config=vars(args)
     )
     
-    # Setup
+    # Device setup
     device = torch.device('cuda')
-    save_dir = Path(args.save_dir) / args.run_name
-    save_dir.mkdir(parents=True, exist_ok=True)
+    torch.backends.cuda.matmul.allow_tf32 = True  # Enable TF32 for faster training
+    torch.backends.cudnn.benchmark = True
     
-    # Data
+    # Data loading
     train_dataset = get_dataset(args.data_dir, split='train')
     val_dataset = get_dataset(args.data_dir, split='val')
     
@@ -154,7 +315,9 @@ def train(args):
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=args.num_workers,
-        pin_memory=True
+        pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=2
     )
     
     val_loader = DataLoader(
@@ -162,105 +325,84 @@ def train(args):
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.num_workers,
-        pin_memory=True
+        pin_memory=True,
+        persistent_workers=True
     )
     
-    # Model
+    # Model setup
     model = create_model(args)
+    model = model.to(device)
     
-    # Initialize ViT weights properly
+    # Initialize ViT weights
     if hasattr(model.vit, 'pooler'):
-        # Initialize pooler weights if they exist
         nn.init.normal_(model.vit.pooler.dense.weight, std=0.02)
         nn.init.zeros_(model.vit.pooler.dense.bias)
     
-    model = model.to(device)
     wandb.watch(model, log_freq=100)
     
     # Training setup
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
     optimizer = optim.AdamW(
         model.parameters(),
         lr=args.lr,
-        weight_decay=args.weight_decay
+        weight_decay=args.weight_decay,
+        betas=(0.9, 0.95)
     )
-    scaler = amp.GradScaler('cuda')
-    scheduler = get_lr_scheduler(optimizer, args, len(train_loader) * args.epochs)
     
-    best_val_loss = float('inf')
+    scaler = amp.GradScaler('cuda') if args.precision != 'fp32' else None
+    scheduler = get_lr_scheduler(optimizer, args, len(train_loader) * args.epochs)
+    early_stopping = EarlyStopping(patience=args.patience)
+    gradient_flow = GradientFlow(model)
     
     # Training loop
+    best_val_loss = float('inf')
+    
     for epoch in range(args.epochs):
         model.train()
         train_losses = []
-        train_pbar = tqdm(train_loader, desc=f'Epoch {epoch} - Train')
-        optimizer.zero_grad()  # Zero gradients at start of epoch
         
-        for batch_idx, batch in enumerate(train_pbar):
-            # Determine if we should accumulate or optimize
-            is_accumulating = (batch_idx + 1) % args.gradient_accumulation_steps != 0
+        # Training epoch
+        with tqdm(train_loader, desc=f'Epoch {epoch} - Train') as train_pbar:
+            optimizer.zero_grad(set_to_none=True)
             
-            loss = train_one_batch(
-                model, batch, optimizer, scheduler, scaler, criterion, 
-                device, epoch, args, accumulating=is_accumulating
-            )
-            train_losses.append(loss)
-            
-            # Clear GPU memory cache periodically
-            if batch_idx % 50 == 0:
-                torch.cuda.empty_cache()
-            
-            # Update progress bar and wandb only on optimization steps
-            if not is_accumulating:
+            for batch_idx, batch in enumerate(train_pbar):
+                is_accumulating = (batch_idx + 1) % args.gradient_accumulation_steps != 0
+                
+                loss = train_one_batch(
+                    model, batch, optimizer, scheduler, scaler, criterion,
+                    device, epoch, args, accumulating=is_accumulating
+                )
+                
+                train_losses.append(loss)
+                
+                if not is_accumulating:
+                    grad_metrics = gradient_flow.log_gradients()
+                    wandb.log({
+                        'train/loss': loss,
+                        'train/learning_rate': scheduler.get_last_lr()[0],
+                        'train/epoch': epoch + batch_idx / len(train_loader),
+                        **grad_metrics
+                    })
+                
                 train_pbar.set_postfix({
                     'loss': f'{loss:.4f}',
                     'lr': f'{scheduler.get_last_lr()[0]:.2e}'
                 })
-                
-                if (batch_idx // args.gradient_accumulation_steps) % 10 == 0:
-                    wandb.log({
-                        'train/loss': loss,
-                        'train/learning_rate': scheduler.get_last_lr()[0],
-                        'train/epoch': epoch + batch_idx / len(train_loader)
-                    })
         
-        # Validation loop
-        model.eval()
-        val_losses = []
-        val_pbar = tqdm(val_loader, desc=f'Epoch {epoch} - Val')
+        # Validation
+        val_loss = validate(model, val_loader, criterion, device, args)
         
-        with torch.no_grad():
-            for batch in val_pbar:
-                # Use smaller batch size for validation if needed
-                images = batch['image'].to(device)
-                tokens = batch['tokens'].to(device)
-                
-                outputs = model(images, tokens)  # No teacher forcing in validation
-                shift_logits = outputs[..., :-1, :].contiguous()
-                shift_labels = tokens[..., 1:].contiguous()
-                loss = criterion(
-                    shift_logits.view(-1, shift_logits.size(-1)),
-                    shift_labels.view(-1)
-                )
-                
-                val_losses.append(loss.item())
-                val_pbar.set_postfix({'loss': f'{loss.item():.4f}'})
-                
-                # Clear cache after each validation batch
-                torch.cuda.empty_cache()
+        # Logging
+        train_loss = np.mean(train_losses)
+        logger.info(f'Epoch {epoch}: Train Loss = {train_loss:.4f}, Val Loss = {val_loss:.4f}')
         
-        # Calculate epoch metrics
-        train_loss = sum(train_losses) / len(train_losses)
-        val_loss = sum(val_losses) / len(val_losses)
-        
-        # Log to wandb
         wandb.log({
             'epoch': epoch,
             'train/epoch_loss': train_loss,
             'val/epoch_loss': val_loss,
         })
         
-        # Save best model and checkpoints
+        # Model saving
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save({
@@ -283,7 +425,12 @@ def train(args):
                 'val_loss': val_loss,
                 'args': args
             }, save_dir / f'checkpoint_epoch_{epoch}.pt')
-
+        
+        # Early stopping check
+        if early_stopping(val_loss):
+            logger.info(f'Early stopping triggered after epoch {epoch}')
+            break
+    
     wandb.finish()
 
 if __name__ == "__main__":
