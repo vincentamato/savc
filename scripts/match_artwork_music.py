@@ -318,58 +318,6 @@ class ImprovedArtworkMusicMatcher:
             lambda x: os.path.basename(str(x))
         )
 
-    def _optimize_batch_diversity(self, matches, min_distance=0.2):
-        """Optimize batch of matches for diversity"""
-        if not matches:
-            return matches
-            
-        optimized = [matches[0]]  # Keep the best match
-        used_midis = {matches[0]['midi_identifier']}
-        used_keys = {matches[0]['key']}
-        
-        for match in matches[1:]:
-            # Skip if we've already used this MIDI file too much
-            if match['midi_identifier'] in used_midis and len(matches) > len(used_midis) * 3:
-                continue
-                
-            # Calculate diversity metrics
-            key_diversity = match['key'] not in used_keys
-            tempo_diversity = all(abs(match['tempo'] - m['tempo']) > 0.2 for m in optimized[-3:])
-            
-            # Calculate feature distance from recent matches
-            recent_features = np.array([[
-                m['analysis']['suggested_tempo'] / 200.0,  # Normalize tempo
-                m['analysis']['complexity_match'],
-                m['analysis']['movement_intensity']
-            ] for m in optimized[-3:]])
-            
-            current_features = np.array([
-                match['analysis']['suggested_tempo'] / 200.0,
-                match['analysis']['complexity_match'],
-                match['analysis']['movement_intensity']
-            ])
-            
-            # Calculate minimum distance to recent matches
-            if len(recent_features) > 0:
-                distances = np.linalg.norm(recent_features - current_features, axis=1)
-                min_dist = np.min(distances)
-            else:
-                min_dist = float('inf')
-            
-            # Add match if diverse enough
-            if min_dist > min_distance or key_diversity or tempo_diversity:
-                optimized.append(match)
-                used_midis.add(match['midi_identifier'])
-                used_keys.add(match['key'])
-            
-            # Limit the total number of consecutive similar matches
-            if len(optimized) >= 3:
-                recent_keys = set(m['key'] for m in optimized[-3:])
-                if len(recent_keys) == 1:  # If last 3 matches have same key
-                    key_diversity = True  # Force key diversity
-            
-        return optimized
-
     def _save_progress(self, matches, output_path, processed_count=None):
         """Save matching progress with detailed statistics"""
         try:
@@ -404,51 +352,115 @@ class ImprovedArtworkMusicMatcher:
             logger.error(f"Error saving progress: {str(e)}")
 
     def _calculate_compatibility(self, midi_row, composition, emotions, key_matches):
-        """Calculate compatibility score with enhanced weighting"""
+        """Calculate compatibility score with stronger diversity emphasis"""
         base_score = 0.0
         weights = {
-            'key_emotional': 0.25,
+            'key_emotional': 0.20,  # Reduced from 0.25
             'tempo': 0.20,
             'complexity': 0.20,
             'movement': 0.20,
-            'mode': 0.15
+            'mode': 0.10,  # Reduced from 0.15
+            'diversity': 0.10  # New weight for diversity
         }
         
-        # Key emotional matching
+        # Calculate base components as before
         key_match = next((m for m in key_matches if m['key'] == midi_row['key']), None)
         if key_match:
             base_score += key_match['score'] * weights['key_emotional']
         
-        # Tempo matching
-        tempo_diff = abs(composition['suggested_tempo'] - (midi_row['tempo'] * 200))  # Scale tempo
-        tempo_score = max(0, 1 - (tempo_diff / 100))  # Normalize difference
+        tempo_diff = abs(composition['suggested_tempo'] - (midi_row['tempo'] * 200))
+        tempo_score = max(0, 1 - (tempo_diff / 100))
         base_score += tempo_score * weights['tempo']
         
-        # Complexity matching
         complexity_diff = abs(composition['complexity'] - midi_row['complexity'])
         complexity_score = max(0, 1 - complexity_diff)
         base_score += complexity_score * weights['complexity']
         
-        # Movement matching
         movement_score = max(0, 1 - abs(
             composition['movement']['movement_intensity'] - midi_row['emotional_intensity']
         ))
         base_score += movement_score * weights['movement']
         
-        # Mode appropriateness
+        # Mode scoring with less weight
         if emotions['valence'] > 0.6 and midi_row['mode'] == 'major':
             base_score += weights['mode']
         elif emotions['valence'] < 0.4 and midi_row['mode'] == 'minor':
             base_score += weights['mode']
         
-        # Apply diversity penalty based on recent usage
-        diversity_penalty = min(0.3, self.midi_usage[midi_row['midi_identifier']] * 0.1)
+        # Enhanced diversity scoring
+        usage_count = self.midi_usage[midi_row['midi_identifier']]
+        diversity_score = 1.0 / (1.0 + usage_count)  # Decreases with usage
+        base_score += diversity_score * weights['diversity']
+        
+        # Apply stronger diversity penalty
+        diversity_penalty = min(0.5, usage_count * 0.15)  # Increased from 0.3/0.1
         final_score = max(0, base_score - diversity_penalty)
         
         return float(final_score)
 
+    def _optimize_batch_diversity(self, matches, min_distance=0.15):  # Reduced from 0.2
+        """Optimize batch of matches with stronger diversity emphasis"""
+        if not matches:
+            return matches
+            
+        optimized = [matches[0]]
+        used_midis = {matches[0]['midi_identifier']}
+        used_keys = {matches[0]['key']}
+        
+        for match in matches[1:]:
+            # More lenient MIDI reuse conditions
+            if match['midi_identifier'] in used_midis and len(matches) > len(used_midis) * 2:  # Reduced from 3
+                continue
+                
+            # Calculate diversity metrics
+            key_diversity = match['key'] not in used_keys
+            tempo_diversity = all(abs(match['tempo'] - m['tempo']) > 0.15 for m in optimized[-2:])  # Reduced window
+            
+            # Calculate feature distance with more features
+            recent_features = np.array([[
+                m['analysis']['suggested_tempo'] / 200.0,
+                m['analysis']['complexity_match'],
+                m['analysis']['movement_intensity'],
+                float(m['key'] == match['key']),  # Add key comparison
+                self.midi_usage[m['midi_identifier']] / 10.0  # Add usage history
+            ] for m in optimized[-2:]])  # Reduced window
+            
+            current_features = np.array([
+                match['analysis']['suggested_tempo'] / 200.0,
+                match['analysis']['complexity_match'],
+                match['analysis']['movement_intensity'],
+                0.0,  # New key comparison
+                self.midi_usage[match['midi_identifier']] / 10.0
+            ])
+            
+            # Calculate minimum distance to recent matches
+            if len(recent_features) > 0:
+                distances = np.linalg.norm(recent_features - current_features, axis=1)
+                min_dist = np.min(distances)
+            else:
+                min_dist = float('inf')
+            
+            # More lenient acceptance criteria
+            if min_dist > min_distance or key_diversity or tempo_diversity:
+                # Add extra check for global diversity
+                if len(used_midis) < len(self.midi_features) * 0.8:  # Ensure we use at least 80% of available MIDIs
+                    optimized.append(match)
+                    used_midis.add(match['midi_identifier'])
+                    used_keys.add(match['key'])
+            
+            # Force diversity if using too few MIDIs
+            if len(optimized) > 10 and len(used_midis) < len(optimized) * 0.4:  # Ensure at least 40% unique MIDIs
+                for potential_match in matches:
+                    if potential_match['midi_identifier'] not in used_midis:
+                        optimized.append(potential_match)
+                        used_midis.add(potential_match['midi_identifier'])
+                        used_keys.add(potential_match['key'])
+                        break
+        
+        return optimized
+
     def find_best_match(self, image_path):
-        """Find best matching MIDI file with improved diversity"""
+        """Find best matching MIDI file with forced diversity"""
         try:
             img_array = self._load_and_process_image(image_path)
             if img_array is None:
@@ -458,14 +470,39 @@ class ImprovedArtworkMusicMatcher:
             emotions = self.emotional_analyzer.analyze_color_emotion(img_array)
             key_matches = self.emotional_analyzer.match_key_to_emotion(emotions, composition)
             
+            # Calculate usage statistics
+            total_matches = sum(self.midi_usage.values())
+            if total_matches > 0:
+                avg_usage = total_matches / len(self.midi_usage)
+                unused_ratio = len([m for m in self.midi_features['midi_identifier'] if m not in self.midi_usage]) / len(self.midi_features)
+            else:
+                avg_usage = 0
+                unused_ratio = 1.0
+            
+            # Adjust scoring based on usage statistics
             matches = []
             for _, midi_row in self.midi_features.iterrows():
-                score = self._calculate_compatibility(midi_row, composition, emotions, key_matches)
+                base_score = self._calculate_compatibility(midi_row, composition, emotions, key_matches)
+                
+                # Calculate diversity bonus
+                usage_count = self.midi_usage.get(midi_row['midi_identifier'], 0)
+                if usage_count == 0:
+                    diversity_bonus = 0.3  # Big bonus for unused files
+                elif usage_count < avg_usage:
+                    diversity_bonus = 0.2  # Moderate bonus for below-average usage
+                else:
+                    diversity_bonus = max(0, 0.1 - (usage_count - avg_usage) * 0.02)  # Decreasing bonus for heavily used files
+                
+                # Force selection of unused files periodically
+                if unused_ratio < 0.4 and usage_count == 0:  # If less than 40% of files used
+                    diversity_bonus += 0.5  # Very large bonus for unused files
+                
+                final_score = base_score + diversity_bonus
                 
                 matches.append({
                     'image_path': image_path,
                     'midi_identifier': midi_row['midi_identifier'],
-                    'compatibility_score': score,
+                    'compatibility_score': final_score,
                     'key': midi_row['key'],
                     'tempo': float(midi_row['tempo']),
                     'analysis': {
@@ -476,24 +513,30 @@ class ImprovedArtworkMusicMatcher:
                     }
                 })
             
-            # Sort by score and apply diversity selection
+            # Sort by score
             matches.sort(key=lambda x: x['compatibility_score'], reverse=True)
             
-            # Select best match considering diversity
-            selected_match = None
-            for match in matches[:10]:  # Consider top 10 matches
-                usage_count = self.midi_usage[match['midi_identifier']]
-                if usage_count < 3:  # Allow up to 3 uses of same MIDI
-                    selected_match = match
-                    break
-            
-            if not selected_match:
-                selected_match = matches[0]  # Fallback to best match if necessary
+            # Force selection of unused MIDI files periodically
+            if unused_ratio < 0.4:
+                for match in matches:
+                    if self.midi_usage.get(match['midi_identifier'], 0) == 0:
+                        selected_match = match
+                        break
+                else:
+                    selected_match = matches[0]
+            else:
+                # Select from top matches with preference for less used files
+                top_matches = matches[:10]
+                top_matches.sort(key=lambda x: self.midi_usage.get(x['midi_identifier'], 0))
+                selected_match = top_matches[0]
             
             # Update usage tracking
-            folder_path = os.path.dirname(image_path)
             self.midi_usage[selected_match['midi_identifier']] += 1
             self.key_usage[selected_match['key']] += 1
+            
+            folder_path = os.path.dirname(image_path)
+            if folder_path not in self.match_history:
+                self.match_history[folder_path] = []
             self.match_history[folder_path].append(selected_match)
             
             return selected_match
