@@ -1,0 +1,7 @@
+*.midi
+*.mid
+*.json
+*.jpg
+*.npy
+__pycache__/
+wandb
