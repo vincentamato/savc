@@ -16,6 +16,32 @@ from threading import Lock
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def key_number_to_string(key_number):
+    """Convert key number to human-readable key signature.
+    
+    Args:
+        key_number (int): Key number from MIDI (-7 to +7 for major, 
+                         -7-8 to +7+8 for minor where +8 indicates minor)
+    
+    Returns:
+        str: Human-readable key signature (e.g., "C major", "A minor")
+    """
+    major_keys = ['Cb', 'Gb', 'Db', 'Ab', 'Eb', 'Bb', 'F', 
+                  'C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#']
+    minor_keys = ['Ab', 'Eb', 'Bb', 'F', 'C', 'G', 'D',
+                  'A', 'E', 'B', 'F#', 'C#', 'G#', 'D#', 'A#']
+    
+    if key_number >= 0:
+        if key_number < 8:  # Major
+            return f"{major_keys[key_number + 7]} major"
+        else:  # Minor
+            return f"{minor_keys[key_number - 8 + 7]} minor"
+    else:
+        if key_number > -8:  # Major
+            return f"{major_keys[key_number + 7]} major"
+        else:  # Minor
+            return f"{minor_keys[key_number + 8 + 7]} minor"
+
 def extract_piano_only(midi_data: pretty_midi.PrettyMIDI) -> pretty_midi.PrettyMIDI:
     """Create a new MIDI file containing only piano tracks from the original"""
     new_midi = pretty_midi.PrettyMIDI(initial_tempo=midi_data.estimate_tempo())
@@ -30,8 +56,53 @@ def extract_piano_only(midi_data: pretty_midi.PrettyMIDI) -> pretty_midi.PrettyM
     
     return new_midi
 
+def analyze_key_signature(notes):
+    """Analyze notes to determine likely key signature when MIDI key signature is missing"""
+    # Count occurrence of each pitch class
+    pitch_classes = np.zeros(12)
+    for note in notes:
+        pitch_class = note.pitch % 12
+        pitch_classes[pitch_class] += note.end - note.start
+    
+    # Correlation coefficients for major and minor scales
+    major_profile = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
+    minor_profile = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
+    
+    # Calculate correlations
+    max_corr = -1
+    best_key = 0
+    is_major = True
+    
+    for i in range(12):
+        # Shift pitch class distribution
+        shifted = np.roll(pitch_classes, -i)
+        
+        # Correlation with major profile
+        major_corr = np.corrcoef(shifted, major_profile)[0,1]
+        
+        # Correlation with minor profile
+        minor_corr = np.corrcoef(shifted, minor_profile)[0,1]
+        
+        if major_corr > max_corr:
+            max_corr = major_corr
+            best_key = i
+            is_major = True
+            
+        if minor_corr > max_corr:
+            max_corr = minor_corr
+            best_key = i
+            is_major = False
+    
+    # Convert to key number format
+    if is_major:
+        key_num = best_key - 7 if best_key > 6 else best_key
+    else:
+        key_num = (best_key + 8) if best_key < 4 else (best_key - 4)
+        
+    return key_num
+
 def extract_features_from_midi_pretty(midi_data: pretty_midi.PrettyMIDI) -> dict:
-    """Extract musical features using pretty_midi"""
+    """Extract musical features using pretty_midi with improved key detection"""
     try:
         # Get all piano notes
         all_notes = []
@@ -52,22 +123,18 @@ def extract_features_from_midi_pretty(midi_data: pretty_midi.PrettyMIDI) -> dict
         if time_sigs:
             time_sig = f"{time_sigs[0].numerator}/{time_sigs[0].denominator}"
         else:
-            # Default to 4/4 if no time signature is specified (common in MIDI files)
-            time_sig = "4/4"
+            time_sig = "4/4"  # Default to 4/4 if no time signature is specified
         
-        # Key signature
+        # Key signature detection
         key_sigs = midi_data.key_signature_changes
-        if key_sigs:
+        if key_sigs and len(key_sigs) > 0:
             key_number = key_sigs[0].key_number
-            # Convert key number to human-readable format
-            keys = ['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#', 'F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb', 'Cb']
-            if -7 <= key_number <= 7:
-                key_name = keys[key_number + 7]
-            else:
-                key_name = 'Unknown'
         else:
-            key_number = 0
-            key_name = 'C'  # Default to C if no key signature found
+            # If no key signature in MIDI, analyze notes
+            key_number = analyze_key_signature(all_notes)
+        
+        # Convert key number to string
+        key_name = key_number_to_string(key_number)
         
         return {
             "total_notes": len(all_notes),
@@ -87,6 +154,8 @@ def extract_features_from_midi_pretty(midi_data: pretty_midi.PrettyMIDI) -> dict
     except Exception as e:
         logger.debug(f"Error extracting features: {str(e)}")
         return None
+
+# Rest of the code remains the same...
 
 def process_midi(args):
     """Process a single MIDI file - extract piano and features"""
