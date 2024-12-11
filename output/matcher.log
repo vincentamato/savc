@@ -1,0 +1,828 @@
+2024-12-10 15:33:18,302 - INFO - Loading MIDI features from data/midi_features.csv
+2024-12-10 15:33:18,329 - INFO - Loaded 18974 MIDI entries
+2024-12-10 15:33:18,329 - INFO - Loading cached MIDI features...
+2024-12-10 15:33:18,350 - INFO - Loading cached image features...
+2024-12-10 15:33:18,484 - INFO - Finding optimal matches with emotional matching...
+2024-12-10 15:33:18,486 - ERROR - Error during execution: 'MatchMaker' object has no attribute 'detect_music_period'
+Traceback (most recent call last):
+  File "/home/vincent/savc/scripts/artwork_music_matcher.py", line 853, in main
+    matches = matcher.find_matches(min_score=args.min_score)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/vincent/savc/scripts/artwork_music_matcher.py", line 705, in find_matches
+    music_period = self.detect_music_period(midi_path)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'MatchMaker' object has no attribute 'detect_music_period'
+2024-12-10 15:35:36,064 - INFO - Loading MIDI features from data/midi_features.csv
+2024-12-10 15:35:36,092 - INFO - Loaded 18974 MIDI entries
+2024-12-10 15:35:36,092 - INFO - Loading cached MIDI features...
+2024-12-10 15:35:36,112 - INFO - Loading cached image features...
+2024-12-10 15:35:36,254 - INFO - Finding optimal matches with emotional matching...
+2024-12-10 15:35:36,257 - ERROR - Error computing emotion score: 'MusicFeatures' object has no attribute 'emotional'
+2024-12-10 15:35:36,257 - ERROR - Error computing match score: 'MusicFeatures' object has no attribute 'emotional'
+2024-12-10 15:35:36,257 - ERROR - Error during execution: 'MusicFeatures' object has no attribute 'emotional'
+Traceback (most recent call last):
+  File "/home/vincent/savc/scripts/artwork_music_matcher.py", line 888, in main
+    matches = matcher.find_matches(min_score=args.min_score)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/vincent/savc/scripts/artwork_music_matcher.py", line 756, in find_matches
+    for emotion in midi_feat.emotional.emotions
+                   ^^^^^^^^^^^^^^^^^^^
+AttributeError: 'MusicFeatures' object has no attribute 'emotional'
+2024-12-10 15:36:48,003 - INFO - Loading MIDI features from data/midi_features.csv
+2024-12-10 15:36:48,031 - INFO - Loaded 18974 MIDI entries
+2024-12-10 15:36:48,031 - INFO - Loading cached MIDI features...
+2024-12-10 15:36:48,051 - INFO - Loading cached image features...
+2024-12-10 15:36:48,194 - INFO - Finding optimal matches with emotional matching...
+2024-12-10 15:36:48,196 - ERROR - Error computing emotion score: 'MusicFeatures' object has no attribute 'emotional'
+2024-12-10 15:36:48,196 - ERROR - Error computing match score: 'MusicFeatures' object has no attribute 'emotional'
+2024-12-10 15:36:48,196 - ERROR - Error during execution: 'MusicFeatures' object has no attribute 'emotional'
+Traceback (most recent call last):
+  File "/home/vincent/savc/scripts/artwork_music_matcher.py", line 922, in main
+    matches = matcher.find_matches(min_score=args.min_score)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/vincent/savc/scripts/artwork_music_matcher.py", line 790, in find_matches
+    for emotion in midi_feat.emotional.emotions
+                   ^^^^^^^^^^^^^^^^^^^
+AttributeError: 'MusicFeatures' object has no attribute 'emotional'
+2024-12-10 15:37:21,418 - INFO - Loading MIDI features from data/midi_features.csv
+2024-12-10 15:37:21,450 - INFO - Loaded 18974 MIDI entries
+2024-12-10 15:37:21,450 - INFO - Force reprocessing enabled - clearing cache
+2024-12-10 15:37:21,453 - INFO - Extracting MIDI features...
+2024-12-10 15:37:34,755 - INFO - Loading MIDI features from data/midi_features.csv
+2024-12-10 15:37:34,786 - INFO - Loaded 18974 MIDI entries
+2024-12-10 15:37:34,786 - INFO - Force reprocessing enabled - clearing cache
+2024-12-10 15:37:34,786 - INFO - Extracting MIDI features...
+2024-12-10 15:38:42,136 - INFO - Loading MIDI features from data/midi_features.csv
+2024-12-10 15:38:42,163 - INFO - Loaded 18974 MIDI entries
+2024-12-10 15:38:42,163 - INFO - Force reprocessing enabled - clearing cache
+2024-12-10 15:38:42,163 - INFO - Extracting MIDI features...
+2024-12-10 15:38:47,947 - INFO - Processed 18974 MIDI files successfully
+2024-12-10 15:38:47,950 - INFO - Extracting image features...
+2024-12-10 15:40:37,447 - INFO - Processed 60000 images successfully
+2024-12-10 15:40:37,457 - INFO - Finding optimal matches with emotional matching...
+2024-12-10 15:41:22,019 - INFO - Saved interim results at count 100
+2024-12-10 15:41:22,019 - INFO - Current stats - Files processed: 100, Matches found: 60, Average score: 0.710
+2024-12-10 15:42:08,190 - INFO - Saved interim results at count 200
+2024-12-10 15:42:08,190 - INFO - Current stats - Files processed: 200, Matches found: 67, Average score: 0.689
+2024-12-10 15:42:52,172 - INFO - Saved interim results at count 300
+2024-12-10 15:42:52,172 - INFO - Current stats - Files processed: 300, Matches found: 68, Average score: 0.687
+2024-12-10 15:43:38,554 - INFO - Saved interim results at count 400
+2024-12-10 15:43:38,554 - INFO - Current stats - Files processed: 400, Matches found: 68, Average score: 0.687
+2024-12-10 15:44:23,838 - INFO - Saved interim results at count 500
+2024-12-10 15:44:23,838 - INFO - Current stats - Files processed: 500, Matches found: 69, Average score: 0.684
+2024-12-10 15:45:08,231 - INFO - Saved interim results at count 600
+2024-12-10 15:45:08,231 - INFO - Current stats - Files processed: 600, Matches found: 69, Average score: 0.684
+2024-12-10 15:45:53,250 - INFO - Saved interim results at count 700
+2024-12-10 15:45:53,250 - INFO - Current stats - Files processed: 700, Matches found: 69, Average score: 0.684
+2024-12-10 15:46:38,434 - INFO - Saved interim results at count 800
+2024-12-10 15:46:38,434 - INFO - Current stats - Files processed: 800, Matches found: 69, Average score: 0.684
+2024-12-10 15:47:23,612 - INFO - Saved interim results at count 900
+2024-12-10 15:47:23,612 - INFO - Current stats - Files processed: 900, Matches found: 69, Average score: 0.684
+2024-12-10 15:48:07,993 - INFO - Saved interim results at count 1000
+2024-12-10 15:48:07,993 - INFO - Current stats - Files processed: 1000, Matches found: 69, Average score: 0.684
+2024-12-10 15:48:52,200 - INFO - Saved interim results at count 1100
+2024-12-10 15:48:52,200 - INFO - Current stats - Files processed: 1100, Matches found: 69, Average score: 0.684
+2024-12-10 15:49:37,274 - INFO - Saved interim results at count 1200
+2024-12-10 15:49:37,274 - INFO - Current stats - Files processed: 1200, Matches found: 69, Average score: 0.684
+2024-12-10 15:50:23,048 - INFO - Saved interim results at count 1300
+2024-12-10 15:50:23,049 - INFO - Current stats - Files processed: 1300, Matches found: 69, Average score: 0.684
+2024-12-10 15:51:07,464 - INFO - Saved interim results at count 1400
+2024-12-10 15:51:07,464 - INFO - Current stats - Files processed: 1400, Matches found: 69, Average score: 0.684
+2024-12-10 15:51:51,678 - INFO - Saved interim results at count 1500
+2024-12-10 15:51:51,678 - INFO - Current stats - Files processed: 1500, Matches found: 69, Average score: 0.684
+2024-12-10 15:52:36,854 - INFO - Saved interim results at count 1600
+2024-12-10 15:52:36,854 - INFO - Current stats - Files processed: 1600, Matches found: 69, Average score: 0.684
+2024-12-10 15:53:21,808 - INFO - Saved interim results at count 1700
+2024-12-10 15:53:21,808 - INFO - Current stats - Files processed: 1700, Matches found: 69, Average score: 0.684
+2024-12-10 15:54:06,818 - INFO - Saved interim results at count 1800
+2024-12-10 15:54:06,818 - INFO - Current stats - Files processed: 1800, Matches found: 69, Average score: 0.684
+2024-12-10 15:54:52,288 - INFO - Saved interim results at count 1900
+2024-12-10 15:54:52,288 - INFO - Current stats - Files processed: 1900, Matches found: 69, Average score: 0.684
+2024-12-10 15:55:37,499 - INFO - Saved interim results at count 2000
+2024-12-10 15:55:37,499 - INFO - Current stats - Files processed: 2000, Matches found: 69, Average score: 0.684
+2024-12-10 15:56:22,771 - INFO - Saved interim results at count 2100
+2024-12-10 15:56:22,771 - INFO - Current stats - Files processed: 2100, Matches found: 69, Average score: 0.684
+2024-12-10 15:57:07,718 - INFO - Saved interim results at count 2200
+2024-12-10 15:57:07,718 - INFO - Current stats - Files processed: 2200, Matches found: 69, Average score: 0.684
+2024-12-10 15:57:52,346 - INFO - Saved interim results at count 2300
+2024-12-10 15:57:52,346 - INFO - Current stats - Files processed: 2300, Matches found: 69, Average score: 0.684
+2024-12-10 15:58:36,608 - INFO - Saved interim results at count 2400
+2024-12-10 15:58:36,608 - INFO - Current stats - Files processed: 2400, Matches found: 69, Average score: 0.684
+2024-12-10 15:59:22,698 - INFO - Saved interim results at count 2500
+2024-12-10 15:59:22,698 - INFO - Current stats - Files processed: 2500, Matches found: 70, Average score: 0.682
+2024-12-10 16:00:07,984 - INFO - Saved interim results at count 2600
+2024-12-10 16:00:07,984 - INFO - Current stats - Files processed: 2600, Matches found: 70, Average score: 0.682
+2024-12-10 16:00:54,071 - INFO - Saved interim results at count 2700
+2024-12-10 16:00:54,071 - INFO - Current stats - Files processed: 2700, Matches found: 70, Average score: 0.682
+2024-12-10 16:01:38,358 - INFO - Saved interim results at count 2800
+2024-12-10 16:01:38,358 - INFO - Current stats - Files processed: 2800, Matches found: 70, Average score: 0.682
+2024-12-10 16:02:22,299 - INFO - Saved interim results at count 2900
+2024-12-10 16:02:22,299 - INFO - Current stats - Files processed: 2900, Matches found: 70, Average score: 0.682
+2024-12-10 16:03:06,507 - INFO - Saved interim results at count 3000
+2024-12-10 16:03:06,507 - INFO - Current stats - Files processed: 3000, Matches found: 70, Average score: 0.682
+2024-12-10 16:03:50,026 - INFO - Saved interim results at count 3100
+2024-12-10 16:03:50,026 - INFO - Current stats - Files processed: 3100, Matches found: 70, Average score: 0.682
+2024-12-10 16:04:33,801 - INFO - Saved interim results at count 3200
+2024-12-10 16:04:33,801 - INFO - Current stats - Files processed: 3200, Matches found: 70, Average score: 0.682
+2024-12-10 16:05:18,772 - INFO - Saved interim results at count 3300
+2024-12-10 16:05:18,772 - INFO - Current stats - Files processed: 3300, Matches found: 70, Average score: 0.682
+2024-12-10 16:06:03,963 - INFO - Saved interim results at count 3400
+2024-12-10 16:06:03,963 - INFO - Current stats - Files processed: 3400, Matches found: 70, Average score: 0.682
+2024-12-10 16:06:49,314 - INFO - Saved interim results at count 3500
+2024-12-10 16:06:49,314 - INFO - Current stats - Files processed: 3500, Matches found: 70, Average score: 0.682
+2024-12-10 16:07:34,415 - INFO - Saved interim results at count 3600
+2024-12-10 16:07:34,415 - INFO - Current stats - Files processed: 3600, Matches found: 70, Average score: 0.682
+2024-12-10 16:08:18,680 - INFO - Saved interim results at count 3700
+2024-12-10 16:08:18,680 - INFO - Current stats - Files processed: 3700, Matches found: 70, Average score: 0.682
+2024-12-10 16:09:02,834 - INFO - Saved interim results at count 3800
+2024-12-10 16:09:02,835 - INFO - Current stats - Files processed: 3800, Matches found: 70, Average score: 0.682
+2024-12-10 16:09:47,926 - INFO - Saved interim results at count 3900
+2024-12-10 16:09:47,926 - INFO - Current stats - Files processed: 3900, Matches found: 70, Average score: 0.682
+2024-12-10 16:10:33,274 - INFO - Saved interim results at count 4000
+2024-12-10 16:10:33,274 - INFO - Current stats - Files processed: 4000, Matches found: 70, Average score: 0.682
+2024-12-10 16:11:17,965 - INFO - Saved interim results at count 4100
+2024-12-10 16:11:17,965 - INFO - Current stats - Files processed: 4100, Matches found: 70, Average score: 0.682
+2024-12-10 16:12:01,959 - INFO - Saved interim results at count 4200
+2024-12-10 16:12:01,959 - INFO - Current stats - Files processed: 4200, Matches found: 70, Average score: 0.682
+2024-12-10 16:12:47,039 - INFO - Saved interim results at count 4300
+2024-12-10 16:12:47,040 - INFO - Current stats - Files processed: 4300, Matches found: 70, Average score: 0.682
+2024-12-10 16:13:31,080 - INFO - Saved interim results at count 4400
+2024-12-10 16:13:31,080 - INFO - Current stats - Files processed: 4400, Matches found: 70, Average score: 0.682
+2024-12-10 16:14:15,299 - INFO - Saved interim results at count 4500
+2024-12-10 16:14:15,299 - INFO - Current stats - Files processed: 4500, Matches found: 70, Average score: 0.682
+2024-12-10 16:15:00,161 - INFO - Saved interim results at count 4600
+2024-12-10 16:15:00,161 - INFO - Current stats - Files processed: 4600, Matches found: 70, Average score: 0.682
+2024-12-10 16:15:44,872 - INFO - Saved interim results at count 4700
+2024-12-10 16:15:44,872 - INFO - Current stats - Files processed: 4700, Matches found: 70, Average score: 0.682
+2024-12-10 16:16:29,037 - INFO - Saved interim results at count 4800
+2024-12-10 16:16:29,037 - INFO - Current stats - Files processed: 4800, Matches found: 70, Average score: 0.682
+2024-12-10 16:17:12,304 - INFO - Saved interim results at count 4900
+2024-12-10 16:17:12,304 - INFO - Current stats - Files processed: 4900, Matches found: 70, Average score: 0.682
+2024-12-10 16:17:56,885 - INFO - Saved interim results at count 5000
+2024-12-10 16:17:56,885 - INFO - Current stats - Files processed: 5000, Matches found: 70, Average score: 0.682
+2024-12-10 16:18:41,308 - INFO - Saved interim results at count 5100
+2024-12-10 16:18:41,308 - INFO - Current stats - Files processed: 5100, Matches found: 70, Average score: 0.682
+2024-12-10 16:19:25,962 - INFO - Saved interim results at count 5200
+2024-12-10 16:19:25,962 - INFO - Current stats - Files processed: 5200, Matches found: 70, Average score: 0.682
+2024-12-10 16:20:11,117 - INFO - Saved interim results at count 5300
+2024-12-10 16:20:11,118 - INFO - Current stats - Files processed: 5300, Matches found: 70, Average score: 0.682
+2024-12-10 16:20:55,162 - INFO - Saved interim results at count 5400
+2024-12-10 16:20:55,162 - INFO - Current stats - Files processed: 5400, Matches found: 70, Average score: 0.682
+2024-12-10 16:21:39,237 - INFO - Saved interim results at count 5500
+2024-12-10 16:21:39,237 - INFO - Current stats - Files processed: 5500, Matches found: 70, Average score: 0.682
+2024-12-10 16:22:23,543 - INFO - Saved interim results at count 5600
+2024-12-10 16:22:23,543 - INFO - Current stats - Files processed: 5600, Matches found: 70, Average score: 0.682
+2024-12-10 16:23:07,594 - INFO - Saved interim results at count 5700
+2024-12-10 16:23:07,594 - INFO - Current stats - Files processed: 5700, Matches found: 71, Average score: 0.680
+2024-12-10 16:23:52,062 - INFO - Saved interim results at count 5800
+2024-12-10 16:23:52,062 - INFO - Current stats - Files processed: 5800, Matches found: 71, Average score: 0.680
+2024-12-10 16:24:36,039 - INFO - Saved interim results at count 5900
+2024-12-10 16:24:36,039 - INFO - Current stats - Files processed: 5900, Matches found: 71, Average score: 0.680
+2024-12-10 16:25:19,849 - INFO - Saved interim results at count 6000
+2024-12-10 16:25:19,849 - INFO - Current stats - Files processed: 6000, Matches found: 71, Average score: 0.680
+2024-12-10 16:26:04,323 - INFO - Saved interim results at count 6100
+2024-12-10 16:26:04,323 - INFO - Current stats - Files processed: 6100, Matches found: 71, Average score: 0.680
+2024-12-10 16:26:48,804 - INFO - Saved interim results at count 6200
+2024-12-10 16:26:48,804 - INFO - Current stats - Files processed: 6200, Matches found: 71, Average score: 0.680
+2024-12-10 16:27:32,087 - INFO - Saved interim results at count 6300
+2024-12-10 16:27:32,087 - INFO - Current stats - Files processed: 6300, Matches found: 71, Average score: 0.680
+2024-12-10 16:28:16,062 - INFO - Saved interim results at count 6400
+2024-12-10 16:28:16,062 - INFO - Current stats - Files processed: 6400, Matches found: 71, Average score: 0.680
+2024-12-10 16:29:00,705 - INFO - Saved interim results at count 6500
+2024-12-10 16:29:00,705 - INFO - Current stats - Files processed: 6500, Matches found: 71, Average score: 0.680
+2024-12-10 16:29:45,710 - INFO - Saved interim results at count 6600
+2024-12-10 16:29:45,710 - INFO - Current stats - Files processed: 6600, Matches found: 71, Average score: 0.680
+2024-12-10 16:30:29,400 - INFO - Saved interim results at count 6700
+2024-12-10 16:30:29,400 - INFO - Current stats - Files processed: 6700, Matches found: 71, Average score: 0.680
+2024-12-10 16:31:14,807 - INFO - Saved interim results at count 6800
+2024-12-10 16:31:14,807 - INFO - Current stats - Files processed: 6800, Matches found: 71, Average score: 0.680
+2024-12-10 16:31:59,425 - INFO - Saved interim results at count 6900
+2024-12-10 16:31:59,425 - INFO - Current stats - Files processed: 6900, Matches found: 71, Average score: 0.680
+2024-12-10 16:32:43,590 - INFO - Saved interim results at count 7000
+2024-12-10 16:32:43,590 - INFO - Current stats - Files processed: 7000, Matches found: 71, Average score: 0.680
+2024-12-10 16:33:27,315 - INFO - Saved interim results at count 7100
+2024-12-10 16:33:27,315 - INFO - Current stats - Files processed: 7100, Matches found: 71, Average score: 0.680
+2024-12-10 16:34:10,744 - INFO - Saved interim results at count 7200
+2024-12-10 16:34:10,744 - INFO - Current stats - Files processed: 7200, Matches found: 71, Average score: 0.680
+2024-12-10 16:34:55,631 - INFO - Saved interim results at count 7300
+2024-12-10 16:34:55,631 - INFO - Current stats - Files processed: 7300, Matches found: 71, Average score: 0.680
+2024-12-10 16:35:39,830 - INFO - Saved interim results at count 7400
+2024-12-10 16:35:39,830 - INFO - Current stats - Files processed: 7400, Matches found: 71, Average score: 0.680
+2024-12-10 16:36:23,920 - INFO - Saved interim results at count 7500
+2024-12-10 16:36:23,920 - INFO - Current stats - Files processed: 7500, Matches found: 71, Average score: 0.680
+2024-12-10 16:37:08,282 - INFO - Saved interim results at count 7600
+2024-12-10 16:37:08,282 - INFO - Current stats - Files processed: 7600, Matches found: 71, Average score: 0.680
+2024-12-10 16:37:52,059 - INFO - Saved interim results at count 7700
+2024-12-10 16:37:52,059 - INFO - Current stats - Files processed: 7700, Matches found: 71, Average score: 0.680
+2024-12-10 16:38:35,865 - INFO - Saved interim results at count 7800
+2024-12-10 16:38:35,865 - INFO - Current stats - Files processed: 7800, Matches found: 71, Average score: 0.680
+2024-12-10 16:39:19,917 - INFO - Saved interim results at count 7900
+2024-12-10 16:39:19,917 - INFO - Current stats - Files processed: 7900, Matches found: 71, Average score: 0.680
+2024-12-10 16:40:04,299 - INFO - Saved interim results at count 8000
+2024-12-10 16:40:04,299 - INFO - Current stats - Files processed: 8000, Matches found: 71, Average score: 0.680
+2024-12-10 16:40:49,458 - INFO - Saved interim results at count 8100
+2024-12-10 16:40:49,458 - INFO - Current stats - Files processed: 8100, Matches found: 71, Average score: 0.680
+2024-12-10 16:41:34,486 - INFO - Saved interim results at count 8200
+2024-12-10 16:41:34,486 - INFO - Current stats - Files processed: 8200, Matches found: 71, Average score: 0.680
+2024-12-10 16:42:18,320 - INFO - Saved interim results at count 8300
+2024-12-10 16:42:18,320 - INFO - Current stats - Files processed: 8300, Matches found: 71, Average score: 0.680
+2024-12-10 16:43:02,399 - INFO - Saved interim results at count 8400
+2024-12-10 16:43:02,399 - INFO - Current stats - Files processed: 8400, Matches found: 71, Average score: 0.680
+2024-12-10 16:43:46,776 - INFO - Saved interim results at count 8500
+2024-12-10 16:43:46,776 - INFO - Current stats - Files processed: 8500, Matches found: 71, Average score: 0.680
+2024-12-10 16:44:33,006 - INFO - Saved interim results at count 8600
+2024-12-10 16:44:33,006 - INFO - Current stats - Files processed: 8600, Matches found: 71, Average score: 0.680
+2024-12-10 16:45:16,870 - INFO - Saved interim results at count 8700
+2024-12-10 16:45:16,870 - INFO - Current stats - Files processed: 8700, Matches found: 71, Average score: 0.680
+2024-12-10 16:46:00,950 - INFO - Saved interim results at count 8800
+2024-12-10 16:46:00,950 - INFO - Current stats - Files processed: 8800, Matches found: 71, Average score: 0.680
+2024-12-10 16:46:45,874 - INFO - Saved interim results at count 8900
+2024-12-10 16:46:45,874 - INFO - Current stats - Files processed: 8900, Matches found: 71, Average score: 0.680
+2024-12-10 16:47:30,530 - INFO - Saved interim results at count 9000
+2024-12-10 16:47:30,530 - INFO - Current stats - Files processed: 9000, Matches found: 71, Average score: 0.680
+2024-12-10 16:48:15,369 - INFO - Saved interim results at count 9100
+2024-12-10 16:48:15,369 - INFO - Current stats - Files processed: 9100, Matches found: 71, Average score: 0.680
+2024-12-10 16:49:00,066 - INFO - Saved interim results at count 9200
+2024-12-10 16:49:00,066 - INFO - Current stats - Files processed: 9200, Matches found: 71, Average score: 0.680
+2024-12-10 16:49:45,022 - INFO - Saved interim results at count 9300
+2024-12-10 16:49:45,022 - INFO - Current stats - Files processed: 9300, Matches found: 71, Average score: 0.680
+2024-12-10 16:50:29,471 - INFO - Saved interim results at count 9400
+2024-12-10 16:50:29,471 - INFO - Current stats - Files processed: 9400, Matches found: 71, Average score: 0.680
+2024-12-10 16:51:13,795 - INFO - Saved interim results at count 9500
+2024-12-10 16:51:13,795 - INFO - Current stats - Files processed: 9500, Matches found: 71, Average score: 0.680
+2024-12-10 16:51:58,909 - INFO - Saved interim results at count 9600
+2024-12-10 16:51:58,909 - INFO - Current stats - Files processed: 9600, Matches found: 71, Average score: 0.680
+2024-12-10 16:52:43,637 - INFO - Saved interim results at count 9700
+2024-12-10 16:52:43,637 - INFO - Current stats - Files processed: 9700, Matches found: 71, Average score: 0.680
+2024-12-10 16:53:28,363 - INFO - Saved interim results at count 9800
+2024-12-10 16:53:28,363 - INFO - Current stats - Files processed: 9800, Matches found: 71, Average score: 0.680
+2024-12-10 16:54:12,737 - INFO - Saved interim results at count 9900
+2024-12-10 16:54:12,737 - INFO - Current stats - Files processed: 9900, Matches found: 71, Average score: 0.680
+2024-12-10 16:54:57,308 - INFO - Saved interim results at count 10000
+2024-12-10 16:54:57,308 - INFO - Current stats - Files processed: 10000, Matches found: 71, Average score: 0.680
+2024-12-10 16:55:41,168 - INFO - Saved interim results at count 10100
+2024-12-10 16:55:41,168 - INFO - Current stats - Files processed: 10100, Matches found: 71, Average score: 0.680
+2024-12-10 16:56:25,355 - INFO - Saved interim results at count 10200
+2024-12-10 16:56:25,355 - INFO - Current stats - Files processed: 10200, Matches found: 71, Average score: 0.680
+2024-12-10 16:57:10,090 - INFO - Saved interim results at count 10300
+2024-12-10 16:57:10,091 - INFO - Current stats - Files processed: 10300, Matches found: 71, Average score: 0.680
+2024-12-10 16:57:54,988 - INFO - Saved interim results at count 10400
+2024-12-10 16:57:54,988 - INFO - Current stats - Files processed: 10400, Matches found: 71, Average score: 0.680
+2024-12-10 16:58:39,204 - INFO - Saved interim results at count 10500
+2024-12-10 16:58:39,204 - INFO - Current stats - Files processed: 10500, Matches found: 71, Average score: 0.680
+2024-12-10 16:59:23,822 - INFO - Saved interim results at count 10600
+2024-12-10 16:59:23,822 - INFO - Current stats - Files processed: 10600, Matches found: 71, Average score: 0.680
+2024-12-10 17:00:08,523 - INFO - Saved interim results at count 10700
+2024-12-10 17:00:08,523 - INFO - Current stats - Files processed: 10700, Matches found: 71, Average score: 0.680
+2024-12-10 17:00:52,045 - INFO - Saved interim results at count 10800
+2024-12-10 17:00:52,045 - INFO - Current stats - Files processed: 10800, Matches found: 71, Average score: 0.680
+2024-12-10 17:01:35,866 - INFO - Saved interim results at count 10900
+2024-12-10 17:01:35,866 - INFO - Current stats - Files processed: 10900, Matches found: 71, Average score: 0.680
+2024-12-10 17:02:19,396 - INFO - Saved interim results at count 11000
+2024-12-10 17:02:19,396 - INFO - Current stats - Files processed: 11000, Matches found: 71, Average score: 0.680
+2024-12-10 17:03:03,077 - INFO - Saved interim results at count 11100
+2024-12-10 17:03:03,077 - INFO - Current stats - Files processed: 11100, Matches found: 71, Average score: 0.680
+2024-12-10 17:03:46,106 - INFO - Saved interim results at count 11200
+2024-12-10 17:03:46,106 - INFO - Current stats - Files processed: 11200, Matches found: 71, Average score: 0.680
+2024-12-10 17:04:29,555 - INFO - Saved interim results at count 11300
+2024-12-10 17:04:29,555 - INFO - Current stats - Files processed: 11300, Matches found: 71, Average score: 0.680
+2024-12-10 17:05:12,574 - INFO - Saved interim results at count 11400
+2024-12-10 17:05:12,574 - INFO - Current stats - Files processed: 11400, Matches found: 71, Average score: 0.680
+2024-12-10 17:05:56,748 - INFO - Saved interim results at count 11500
+2024-12-10 17:05:56,748 - INFO - Current stats - Files processed: 11500, Matches found: 71, Average score: 0.680
+2024-12-10 17:06:41,656 - INFO - Saved interim results at count 11600
+2024-12-10 17:06:41,656 - INFO - Current stats - Files processed: 11600, Matches found: 71, Average score: 0.680
+2024-12-10 17:07:26,104 - INFO - Saved interim results at count 11700
+2024-12-10 17:07:26,104 - INFO - Current stats - Files processed: 11700, Matches found: 71, Average score: 0.680
+2024-12-10 17:08:10,745 - INFO - Saved interim results at count 11800
+2024-12-10 17:08:10,745 - INFO - Current stats - Files processed: 11800, Matches found: 71, Average score: 0.680
+2024-12-10 17:08:54,636 - INFO - Saved interim results at count 11900
+2024-12-10 17:08:54,636 - INFO - Current stats - Files processed: 11900, Matches found: 71, Average score: 0.680
+2024-12-10 17:09:39,227 - INFO - Saved interim results at count 12000
+2024-12-10 17:09:39,227 - INFO - Current stats - Files processed: 12000, Matches found: 71, Average score: 0.680
+2024-12-10 17:10:23,870 - INFO - Saved interim results at count 12100
+2024-12-10 17:10:23,870 - INFO - Current stats - Files processed: 12100, Matches found: 71, Average score: 0.680
+2024-12-10 17:11:08,551 - INFO - Saved interim results at count 12200
+2024-12-10 17:11:08,551 - INFO - Current stats - Files processed: 12200, Matches found: 71, Average score: 0.680
+2024-12-10 17:11:52,705 - INFO - Saved interim results at count 12300
+2024-12-10 17:11:52,705 - INFO - Current stats - Files processed: 12300, Matches found: 71, Average score: 0.680
+2024-12-10 17:12:37,794 - INFO - Saved interim results at count 12400
+2024-12-10 17:12:37,794 - INFO - Current stats - Files processed: 12400, Matches found: 71, Average score: 0.680
+2024-12-10 17:13:21,500 - INFO - Saved interim results at count 12500
+2024-12-10 17:13:21,500 - INFO - Current stats - Files processed: 12500, Matches found: 71, Average score: 0.680
+2024-12-10 17:14:05,824 - INFO - Saved interim results at count 12600
+2024-12-10 17:14:05,824 - INFO - Current stats - Files processed: 12600, Matches found: 71, Average score: 0.680
+2024-12-10 17:14:49,841 - INFO - Saved interim results at count 12700
+2024-12-10 17:14:49,841 - INFO - Current stats - Files processed: 12700, Matches found: 71, Average score: 0.680
+2024-12-10 17:15:34,981 - INFO - Saved interim results at count 12800
+2024-12-10 17:15:34,981 - INFO - Current stats - Files processed: 12800, Matches found: 71, Average score: 0.680
+2024-12-10 17:16:18,614 - INFO - Saved interim results at count 12900
+2024-12-10 17:16:18,615 - INFO - Current stats - Files processed: 12900, Matches found: 71, Average score: 0.680
+2024-12-10 17:17:02,918 - INFO - Saved interim results at count 13000
+2024-12-10 17:17:02,918 - INFO - Current stats - Files processed: 13000, Matches found: 71, Average score: 0.680
+2024-12-10 17:17:46,120 - INFO - Saved interim results at count 13100
+2024-12-10 17:17:46,120 - INFO - Current stats - Files processed: 13100, Matches found: 71, Average score: 0.680
+2024-12-10 17:18:30,968 - INFO - Saved interim results at count 13200
+2024-12-10 17:18:30,968 - INFO - Current stats - Files processed: 13200, Matches found: 71, Average score: 0.680
+2024-12-10 17:19:15,334 - INFO - Saved interim results at count 13300
+2024-12-10 17:19:15,334 - INFO - Current stats - Files processed: 13300, Matches found: 71, Average score: 0.680
+2024-12-10 17:19:59,268 - INFO - Saved interim results at count 13400
+2024-12-10 17:19:59,268 - INFO - Current stats - Files processed: 13400, Matches found: 71, Average score: 0.680
+2024-12-10 17:20:43,204 - INFO - Saved interim results at count 13500
+2024-12-10 17:20:43,204 - INFO - Current stats - Files processed: 13500, Matches found: 71, Average score: 0.680
+2024-12-10 17:21:27,934 - INFO - Saved interim results at count 13600
+2024-12-10 17:21:27,934 - INFO - Current stats - Files processed: 13600, Matches found: 71, Average score: 0.680
+2024-12-10 17:22:11,980 - INFO - Saved interim results at count 13700
+2024-12-10 17:22:11,980 - INFO - Current stats - Files processed: 13700, Matches found: 71, Average score: 0.680
+2024-12-10 17:22:56,456 - INFO - Saved interim results at count 13800
+2024-12-10 17:22:56,456 - INFO - Current stats - Files processed: 13800, Matches found: 71, Average score: 0.680
+2024-12-10 17:23:41,075 - INFO - Saved interim results at count 13900
+2024-12-10 17:23:41,075 - INFO - Current stats - Files processed: 13900, Matches found: 71, Average score: 0.680
+2024-12-10 17:24:24,866 - INFO - Saved interim results at count 14000
+2024-12-10 17:24:24,866 - INFO - Current stats - Files processed: 14000, Matches found: 71, Average score: 0.680
+2024-12-10 17:25:09,708 - INFO - Saved interim results at count 14100
+2024-12-10 17:25:09,708 - INFO - Current stats - Files processed: 14100, Matches found: 71, Average score: 0.680
+2024-12-10 17:25:53,555 - INFO - Saved interim results at count 14200
+2024-12-10 17:25:53,555 - INFO - Current stats - Files processed: 14200, Matches found: 71, Average score: 0.680
+2024-12-10 17:26:38,222 - INFO - Saved interim results at count 14300
+2024-12-10 17:26:38,222 - INFO - Current stats - Files processed: 14300, Matches found: 71, Average score: 0.680
+2024-12-10 17:27:22,373 - INFO - Saved interim results at count 14400
+2024-12-10 17:27:22,374 - INFO - Current stats - Files processed: 14400, Matches found: 71, Average score: 0.680
+2024-12-10 17:28:06,940 - INFO - Saved interim results at count 14500
+2024-12-10 17:28:06,940 - INFO - Current stats - Files processed: 14500, Matches found: 71, Average score: 0.680
+2024-12-10 17:28:50,639 - INFO - Saved interim results at count 14600
+2024-12-10 17:28:50,639 - INFO - Current stats - Files processed: 14600, Matches found: 71, Average score: 0.680
+2024-12-10 17:29:36,004 - INFO - Saved interim results at count 14700
+2024-12-10 17:29:36,004 - INFO - Current stats - Files processed: 14700, Matches found: 71, Average score: 0.680
+2024-12-10 17:30:19,887 - INFO - Saved interim results at count 14800
+2024-12-10 17:30:19,887 - INFO - Current stats - Files processed: 14800, Matches found: 71, Average score: 0.680
+2024-12-10 17:31:04,198 - INFO - Saved interim results at count 14900
+2024-12-10 17:31:04,198 - INFO - Current stats - Files processed: 14900, Matches found: 71, Average score: 0.680
+2024-12-10 17:31:48,161 - INFO - Saved interim results at count 15000
+2024-12-10 17:31:48,161 - INFO - Current stats - Files processed: 15000, Matches found: 71, Average score: 0.680
+2024-12-10 17:32:32,726 - INFO - Saved interim results at count 15100
+2024-12-10 17:32:32,727 - INFO - Current stats - Files processed: 15100, Matches found: 71, Average score: 0.680
+2024-12-10 17:33:16,539 - INFO - Saved interim results at count 15200
+2024-12-10 17:33:16,540 - INFO - Current stats - Files processed: 15200, Matches found: 71, Average score: 0.680
+2024-12-10 17:34:01,338 - INFO - Saved interim results at count 15300
+2024-12-10 17:34:01,338 - INFO - Current stats - Files processed: 15300, Matches found: 71, Average score: 0.680
+2024-12-10 17:34:46,336 - INFO - Saved interim results at count 15400
+2024-12-10 17:34:46,336 - INFO - Current stats - Files processed: 15400, Matches found: 71, Average score: 0.680
+2024-12-10 17:35:30,946 - INFO - Saved interim results at count 15500
+2024-12-10 17:35:30,946 - INFO - Current stats - Files processed: 15500, Matches found: 71, Average score: 0.680
+2024-12-10 17:36:15,977 - INFO - Saved interim results at count 15600
+2024-12-10 17:36:15,977 - INFO - Current stats - Files processed: 15600, Matches found: 71, Average score: 0.680
+2024-12-10 17:36:59,427 - INFO - Saved interim results at count 15700
+2024-12-10 17:36:59,427 - INFO - Current stats - Files processed: 15700, Matches found: 71, Average score: 0.680
+2024-12-10 17:37:44,383 - INFO - Saved interim results at count 15800
+2024-12-10 17:37:44,383 - INFO - Current stats - Files processed: 15800, Matches found: 71, Average score: 0.680
+2024-12-10 17:38:29,555 - INFO - Saved interim results at count 15900
+2024-12-10 17:38:29,555 - INFO - Current stats - Files processed: 15900, Matches found: 71, Average score: 0.680
+2024-12-10 17:39:13,578 - INFO - Saved interim results at count 16000
+2024-12-10 17:39:13,578 - INFO - Current stats - Files processed: 16000, Matches found: 71, Average score: 0.680
+2024-12-10 17:39:57,874 - INFO - Saved interim results at count 16100
+2024-12-10 17:39:57,874 - INFO - Current stats - Files processed: 16100, Matches found: 71, Average score: 0.680
+2024-12-10 17:40:42,119 - INFO - Saved interim results at count 16200
+2024-12-10 17:40:42,119 - INFO - Current stats - Files processed: 16200, Matches found: 71, Average score: 0.680
+2024-12-10 17:41:26,490 - INFO - Saved interim results at count 16300
+2024-12-10 17:41:26,490 - INFO - Current stats - Files processed: 16300, Matches found: 71, Average score: 0.680
+2024-12-10 17:42:10,761 - INFO - Saved interim results at count 16400
+2024-12-10 17:42:10,761 - INFO - Current stats - Files processed: 16400, Matches found: 71, Average score: 0.680
+2024-12-10 17:42:55,410 - INFO - Saved interim results at count 16500
+2024-12-10 17:42:55,410 - INFO - Current stats - Files processed: 16500, Matches found: 71, Average score: 0.680
+2024-12-10 17:43:40,345 - INFO - Saved interim results at count 16600
+2024-12-10 17:43:40,345 - INFO - Current stats - Files processed: 16600, Matches found: 71, Average score: 0.680
+2024-12-10 17:44:25,531 - INFO - Saved interim results at count 16700
+2024-12-10 17:44:25,531 - INFO - Current stats - Files processed: 16700, Matches found: 71, Average score: 0.680
+2024-12-10 17:45:09,873 - INFO - Saved interim results at count 16800
+2024-12-10 17:45:09,873 - INFO - Current stats - Files processed: 16800, Matches found: 71, Average score: 0.680
+2024-12-10 17:45:53,732 - INFO - Saved interim results at count 16900
+2024-12-10 17:45:53,732 - INFO - Current stats - Files processed: 16900, Matches found: 71, Average score: 0.680
+2024-12-10 17:46:38,861 - INFO - Saved interim results at count 17000
+2024-12-10 17:46:38,861 - INFO - Current stats - Files processed: 17000, Matches found: 71, Average score: 0.680
+2024-12-10 17:47:23,136 - INFO - Saved interim results at count 17100
+2024-12-10 17:47:23,136 - INFO - Current stats - Files processed: 17100, Matches found: 71, Average score: 0.680
+2024-12-10 17:48:06,444 - INFO - Saved interim results at count 17200
+2024-12-10 17:48:06,444 - INFO - Current stats - Files processed: 17200, Matches found: 71, Average score: 0.680
+2024-12-10 17:48:50,611 - INFO - Saved interim results at count 17300
+2024-12-10 17:48:50,611 - INFO - Current stats - Files processed: 17300, Matches found: 71, Average score: 0.680
+2024-12-10 17:49:34,791 - INFO - Saved interim results at count 17400
+2024-12-10 17:49:34,791 - INFO - Current stats - Files processed: 17400, Matches found: 71, Average score: 0.680
+2024-12-10 17:50:19,350 - INFO - Saved interim results at count 17500
+2024-12-10 17:50:19,350 - INFO - Current stats - Files processed: 17500, Matches found: 71, Average score: 0.680
+2024-12-10 17:51:03,058 - INFO - Saved interim results at count 17600
+2024-12-10 17:51:03,059 - INFO - Current stats - Files processed: 17600, Matches found: 71, Average score: 0.680
+2024-12-10 17:51:47,278 - INFO - Saved interim results at count 17700
+2024-12-10 17:51:47,278 - INFO - Current stats - Files processed: 17700, Matches found: 71, Average score: 0.680
+2024-12-10 17:52:30,716 - INFO - Saved interim results at count 17800
+2024-12-10 17:52:30,716 - INFO - Current stats - Files processed: 17800, Matches found: 71, Average score: 0.680
+2024-12-10 17:53:14,985 - INFO - Saved interim results at count 17900
+2024-12-10 17:53:14,985 - INFO - Current stats - Files processed: 17900, Matches found: 71, Average score: 0.680
+2024-12-10 17:53:59,808 - INFO - Saved interim results at count 18000
+2024-12-10 17:53:59,808 - INFO - Current stats - Files processed: 18000, Matches found: 71, Average score: 0.680
+2024-12-10 17:54:44,073 - INFO - Saved interim results at count 18100
+2024-12-10 17:54:44,074 - INFO - Current stats - Files processed: 18100, Matches found: 71, Average score: 0.680
+2024-12-10 17:55:28,070 - INFO - Saved interim results at count 18200
+2024-12-10 17:55:28,070 - INFO - Current stats - Files processed: 18200, Matches found: 71, Average score: 0.680
+2024-12-10 17:56:12,065 - INFO - Saved interim results at count 18300
+2024-12-10 17:56:12,065 - INFO - Current stats - Files processed: 18300, Matches found: 71, Average score: 0.680
+2024-12-10 17:56:55,935 - INFO - Saved interim results at count 18400
+2024-12-10 17:56:55,936 - INFO - Current stats - Files processed: 18400, Matches found: 71, Average score: 0.680
+2024-12-10 17:57:39,527 - INFO - Saved interim results at count 18500
+2024-12-10 17:57:39,527 - INFO - Current stats - Files processed: 18500, Matches found: 71, Average score: 0.680
+2024-12-10 17:58:23,315 - INFO - Saved interim results at count 18600
+2024-12-10 17:58:23,315 - INFO - Current stats - Files processed: 18600, Matches found: 71, Average score: 0.680
+2024-12-10 17:59:07,820 - INFO - Saved interim results at count 18700
+2024-12-10 17:59:07,820 - INFO - Current stats - Files processed: 18700, Matches found: 71, Average score: 0.680
+2024-12-10 17:59:51,780 - INFO - Saved interim results at count 18800
+2024-12-10 17:59:51,780 - INFO - Current stats - Files processed: 18800, Matches found: 71, Average score: 0.680
+2024-12-10 18:00:37,444 - INFO - Saved interim results at count 18900
+2024-12-10 18:00:37,444 - INFO - Current stats - Files processed: 18900, Matches found: 71, Average score: 0.680
+2024-12-10 18:01:09,874 - INFO - Attempting to match 18903 remaining MIDIs...
+2024-12-10 18:01:21,020 - INFO - Saved interim results at count 19000
+2024-12-10 18:01:21,020 - INFO - Current stats - Files processed: 19000, Matches found: 71, Average score: 0.680
+2024-12-10 18:02:04,525 - INFO - Saved interim results at count 19100
+2024-12-10 18:02:04,525 - INFO - Current stats - Files processed: 19100, Matches found: 72, Average score: 0.677
+2024-12-10 18:02:49,022 - INFO - Saved interim results at count 19200
+2024-12-10 18:02:49,022 - INFO - Current stats - Files processed: 19200, Matches found: 73, Average score: 0.674
+2024-12-10 18:03:33,826 - INFO - Saved interim results at count 19300
+2024-12-10 18:03:33,826 - INFO - Current stats - Files processed: 19300, Matches found: 73, Average score: 0.674
+2024-12-10 18:04:18,078 - INFO - Saved interim results at count 19400
+2024-12-10 18:04:18,078 - INFO - Current stats - Files processed: 19400, Matches found: 73, Average score: 0.674
+2024-12-10 18:05:02,324 - INFO - Saved interim results at count 19500
+2024-12-10 18:05:02,325 - INFO - Current stats - Files processed: 19500, Matches found: 73, Average score: 0.674
+2024-12-10 18:05:46,034 - INFO - Saved interim results at count 19600
+2024-12-10 18:05:46,034 - INFO - Current stats - Files processed: 19600, Matches found: 73, Average score: 0.674
+2024-12-10 18:06:30,736 - INFO - Saved interim results at count 19700
+2024-12-10 18:06:30,736 - INFO - Current stats - Files processed: 19700, Matches found: 73, Average score: 0.674
+2024-12-10 18:07:14,797 - INFO - Saved interim results at count 19800
+2024-12-10 18:07:14,797 - INFO - Current stats - Files processed: 19800, Matches found: 73, Average score: 0.674
+2024-12-10 18:07:58,670 - INFO - Saved interim results at count 19900
+2024-12-10 18:07:58,670 - INFO - Current stats - Files processed: 19900, Matches found: 73, Average score: 0.674
+2024-12-10 18:08:42,769 - INFO - Saved interim results at count 20000
+2024-12-10 18:08:42,769 - INFO - Current stats - Files processed: 20000, Matches found: 73, Average score: 0.674
+2024-12-10 18:09:27,090 - INFO - Saved interim results at count 20100
+2024-12-10 18:09:27,091 - INFO - Current stats - Files processed: 20100, Matches found: 73, Average score: 0.674
+2024-12-10 18:10:12,258 - INFO - Saved interim results at count 20200
+2024-12-10 18:10:12,258 - INFO - Current stats - Files processed: 20200, Matches found: 73, Average score: 0.674
+2024-12-10 18:10:56,088 - INFO - Saved interim results at count 20300
+2024-12-10 18:10:56,088 - INFO - Current stats - Files processed: 20300, Matches found: 73, Average score: 0.674
+2024-12-10 18:11:39,950 - INFO - Saved interim results at count 20400
+2024-12-10 18:11:39,950 - INFO - Current stats - Files processed: 20400, Matches found: 73, Average score: 0.674
+2024-12-10 18:12:24,187 - INFO - Saved interim results at count 20500
+2024-12-10 18:12:24,187 - INFO - Current stats - Files processed: 20500, Matches found: 73, Average score: 0.674
+2024-12-10 18:13:08,632 - INFO - Saved interim results at count 20600
+2024-12-10 18:13:08,633 - INFO - Current stats - Files processed: 20600, Matches found: 73, Average score: 0.674
+2024-12-10 18:13:52,974 - INFO - Saved interim results at count 20700
+2024-12-10 18:13:52,974 - INFO - Current stats - Files processed: 20700, Matches found: 73, Average score: 0.674
+2024-12-10 18:14:37,479 - INFO - Saved interim results at count 20800
+2024-12-10 18:14:37,479 - INFO - Current stats - Files processed: 20800, Matches found: 73, Average score: 0.674
+2024-12-10 18:15:21,822 - INFO - Saved interim results at count 20900
+2024-12-10 18:15:21,822 - INFO - Current stats - Files processed: 20900, Matches found: 73, Average score: 0.674
+2024-12-10 18:16:06,357 - INFO - Saved interim results at count 21000
+2024-12-10 18:16:06,357 - INFO - Current stats - Files processed: 21000, Matches found: 73, Average score: 0.674
+2024-12-10 18:16:50,092 - INFO - Saved interim results at count 21100
+2024-12-10 18:16:50,092 - INFO - Current stats - Files processed: 21100, Matches found: 73, Average score: 0.674
+2024-12-10 18:17:34,376 - INFO - Saved interim results at count 21200
+2024-12-10 18:17:34,376 - INFO - Current stats - Files processed: 21200, Matches found: 73, Average score: 0.674
+2024-12-10 18:18:18,329 - INFO - Saved interim results at count 21300
+2024-12-10 18:18:18,329 - INFO - Current stats - Files processed: 21300, Matches found: 73, Average score: 0.674
+2024-12-10 18:19:03,557 - INFO - Saved interim results at count 21400
+2024-12-10 18:19:03,557 - INFO - Current stats - Files processed: 21400, Matches found: 73, Average score: 0.674
+2024-12-10 18:19:47,864 - INFO - Saved interim results at count 21500
+2024-12-10 18:19:47,864 - INFO - Current stats - Files processed: 21500, Matches found: 73, Average score: 0.674
+2024-12-10 18:20:33,474 - INFO - Saved interim results at count 21600
+2024-12-10 18:20:33,474 - INFO - Current stats - Files processed: 21600, Matches found: 73, Average score: 0.674
+2024-12-10 18:21:17,628 - INFO - Saved interim results at count 21700
+2024-12-10 18:21:17,628 - INFO - Current stats - Files processed: 21700, Matches found: 73, Average score: 0.674
+2024-12-10 18:22:01,793 - INFO - Saved interim results at count 21800
+2024-12-10 18:22:01,793 - INFO - Current stats - Files processed: 21800, Matches found: 73, Average score: 0.674
+2024-12-10 18:22:45,354 - INFO - Saved interim results at count 21900
+2024-12-10 18:22:45,354 - INFO - Current stats - Files processed: 21900, Matches found: 73, Average score: 0.674
+2024-12-10 18:23:28,782 - INFO - Saved interim results at count 22000
+2024-12-10 18:23:28,782 - INFO - Current stats - Files processed: 22000, Matches found: 73, Average score: 0.674
+2024-12-10 18:24:11,985 - INFO - Saved interim results at count 22100
+2024-12-10 18:24:11,986 - INFO - Current stats - Files processed: 22100, Matches found: 73, Average score: 0.674
+2024-12-10 18:24:56,366 - INFO - Saved interim results at count 22200
+2024-12-10 18:24:56,366 - INFO - Current stats - Files processed: 22200, Matches found: 73, Average score: 0.674
+2024-12-10 18:25:40,736 - INFO - Saved interim results at count 22300
+2024-12-10 18:25:40,736 - INFO - Current stats - Files processed: 22300, Matches found: 73, Average score: 0.674
+2024-12-10 18:26:25,125 - INFO - Saved interim results at count 22400
+2024-12-10 18:26:25,125 - INFO - Current stats - Files processed: 22400, Matches found: 73, Average score: 0.674
+2024-12-10 18:27:09,104 - INFO - Saved interim results at count 22500
+2024-12-10 18:27:09,104 - INFO - Current stats - Files processed: 22500, Matches found: 73, Average score: 0.674
+2024-12-10 18:27:52,886 - INFO - Saved interim results at count 22600
+2024-12-10 18:27:52,886 - INFO - Current stats - Files processed: 22600, Matches found: 73, Average score: 0.674
+2024-12-10 18:28:36,268 - INFO - Saved interim results at count 22700
+2024-12-10 18:28:36,268 - INFO - Current stats - Files processed: 22700, Matches found: 73, Average score: 0.674
+2024-12-10 18:29:20,814 - INFO - Saved interim results at count 22800
+2024-12-10 18:29:20,814 - INFO - Current stats - Files processed: 22800, Matches found: 73, Average score: 0.674
+2024-12-10 18:30:04,543 - INFO - Saved interim results at count 22900
+2024-12-10 18:30:04,544 - INFO - Current stats - Files processed: 22900, Matches found: 73, Average score: 0.674
+2024-12-10 18:30:48,323 - INFO - Saved interim results at count 23000
+2024-12-10 18:30:48,323 - INFO - Current stats - Files processed: 23000, Matches found: 73, Average score: 0.674
+2024-12-10 18:31:31,785 - INFO - Saved interim results at count 23100
+2024-12-10 18:31:31,785 - INFO - Current stats - Files processed: 23100, Matches found: 73, Average score: 0.674
+2024-12-10 18:32:15,763 - INFO - Saved interim results at count 23200
+2024-12-10 18:32:15,763 - INFO - Current stats - Files processed: 23200, Matches found: 73, Average score: 0.674
+2024-12-10 18:32:58,816 - INFO - Saved interim results at count 23300
+2024-12-10 18:32:58,816 - INFO - Current stats - Files processed: 23300, Matches found: 73, Average score: 0.674
+2024-12-10 18:33:42,850 - INFO - Saved interim results at count 23400
+2024-12-10 18:33:42,850 - INFO - Current stats - Files processed: 23400, Matches found: 73, Average score: 0.674
+2024-12-10 18:34:27,351 - INFO - Saved interim results at count 23500
+2024-12-10 18:34:27,351 - INFO - Current stats - Files processed: 23500, Matches found: 73, Average score: 0.674
+2024-12-10 18:35:11,942 - INFO - Saved interim results at count 23600
+2024-12-10 18:35:11,942 - INFO - Current stats - Files processed: 23600, Matches found: 73, Average score: 0.674
+2024-12-10 18:35:55,689 - INFO - Saved interim results at count 23700
+2024-12-10 18:35:55,689 - INFO - Current stats - Files processed: 23700, Matches found: 73, Average score: 0.674
+2024-12-10 18:36:38,871 - INFO - Saved interim results at count 23800
+2024-12-10 18:36:38,871 - INFO - Current stats - Files processed: 23800, Matches found: 73, Average score: 0.674
+2024-12-10 18:37:23,020 - INFO - Saved interim results at count 23900
+2024-12-10 18:37:23,020 - INFO - Current stats - Files processed: 23900, Matches found: 73, Average score: 0.674
+2024-12-10 18:38:07,181 - INFO - Saved interim results at count 24000
+2024-12-10 18:38:07,181 - INFO - Current stats - Files processed: 24000, Matches found: 73, Average score: 0.674
+2024-12-10 18:38:51,481 - INFO - Saved interim results at count 24100
+2024-12-10 18:38:51,481 - INFO - Current stats - Files processed: 24100, Matches found: 73, Average score: 0.674
+2024-12-10 18:39:36,503 - INFO - Saved interim results at count 24200
+2024-12-10 18:39:36,503 - INFO - Current stats - Files processed: 24200, Matches found: 73, Average score: 0.674
+2024-12-10 18:40:20,148 - INFO - Saved interim results at count 24300
+2024-12-10 18:40:20,149 - INFO - Current stats - Files processed: 24300, Matches found: 73, Average score: 0.674
+2024-12-10 18:41:03,839 - INFO - Saved interim results at count 24400
+2024-12-10 18:41:03,839 - INFO - Current stats - Files processed: 24400, Matches found: 73, Average score: 0.674
+2024-12-10 18:41:47,848 - INFO - Saved interim results at count 24500
+2024-12-10 18:41:47,848 - INFO - Current stats - Files processed: 24500, Matches found: 73, Average score: 0.674
+2024-12-10 18:42:31,566 - INFO - Saved interim results at count 24600
+2024-12-10 18:42:31,566 - INFO - Current stats - Files processed: 24600, Matches found: 73, Average score: 0.674
+2024-12-10 18:43:15,327 - INFO - Saved interim results at count 24700
+2024-12-10 18:43:15,327 - INFO - Current stats - Files processed: 24700, Matches found: 74, Average score: 0.671
+2024-12-10 18:43:58,800 - INFO - Saved interim results at count 24800
+2024-12-10 18:43:58,800 - INFO - Current stats - Files processed: 24800, Matches found: 74, Average score: 0.671
+2024-12-10 18:44:42,204 - INFO - Saved interim results at count 24900
+2024-12-10 18:44:42,204 - INFO - Current stats - Files processed: 24900, Matches found: 74, Average score: 0.671
+2024-12-10 18:45:26,900 - INFO - Saved interim results at count 25000
+2024-12-10 18:45:26,901 - INFO - Current stats - Files processed: 25000, Matches found: 75, Average score: 0.668
+2024-12-10 18:46:10,962 - INFO - Saved interim results at count 25100
+2024-12-10 18:46:10,962 - INFO - Current stats - Files processed: 25100, Matches found: 75, Average score: 0.668
+2024-12-10 18:46:53,858 - INFO - Saved interim results at count 25200
+2024-12-10 18:46:53,858 - INFO - Current stats - Files processed: 25200, Matches found: 75, Average score: 0.668
+2024-12-10 18:47:37,342 - INFO - Saved interim results at count 25300
+2024-12-10 18:47:37,342 - INFO - Current stats - Files processed: 25300, Matches found: 75, Average score: 0.668
+2024-12-10 18:48:21,890 - INFO - Saved interim results at count 25400
+2024-12-10 18:48:21,891 - INFO - Current stats - Files processed: 25400, Matches found: 75, Average score: 0.668
+2024-12-10 18:49:06,612 - INFO - Saved interim results at count 25500
+2024-12-10 18:49:06,612 - INFO - Current stats - Files processed: 25500, Matches found: 75, Average score: 0.668
+2024-12-10 18:49:50,009 - INFO - Saved interim results at count 25600
+2024-12-10 18:49:50,009 - INFO - Current stats - Files processed: 25600, Matches found: 75, Average score: 0.668
+2024-12-10 18:50:34,770 - INFO - Saved interim results at count 25700
+2024-12-10 18:50:34,771 - INFO - Current stats - Files processed: 25700, Matches found: 75, Average score: 0.668
+2024-12-10 18:51:19,319 - INFO - Saved interim results at count 25800
+2024-12-10 18:51:19,319 - INFO - Current stats - Files processed: 25800, Matches found: 75, Average score: 0.668
+2024-12-10 18:52:03,640 - INFO - Saved interim results at count 25900
+2024-12-10 18:52:03,641 - INFO - Current stats - Files processed: 25900, Matches found: 75, Average score: 0.668
+2024-12-10 18:52:47,950 - INFO - Saved interim results at count 26000
+2024-12-10 18:52:47,950 - INFO - Current stats - Files processed: 26000, Matches found: 75, Average score: 0.668
+2024-12-10 18:53:31,455 - INFO - Saved interim results at count 26100
+2024-12-10 18:53:31,455 - INFO - Current stats - Files processed: 26100, Matches found: 75, Average score: 0.668
+2024-12-10 18:54:16,040 - INFO - Saved interim results at count 26200
+2024-12-10 18:54:16,040 - INFO - Current stats - Files processed: 26200, Matches found: 75, Average score: 0.668
+2024-12-10 18:55:00,047 - INFO - Saved interim results at count 26300
+2024-12-10 18:55:00,047 - INFO - Current stats - Files processed: 26300, Matches found: 75, Average score: 0.668
+2024-12-10 18:55:43,720 - INFO - Saved interim results at count 26400
+2024-12-10 18:55:43,720 - INFO - Current stats - Files processed: 26400, Matches found: 75, Average score: 0.668
+2024-12-10 18:56:27,950 - INFO - Saved interim results at count 26500
+2024-12-10 18:56:27,950 - INFO - Current stats - Files processed: 26500, Matches found: 75, Average score: 0.668
+2024-12-10 18:57:11,585 - INFO - Saved interim results at count 26600
+2024-12-10 18:57:11,585 - INFO - Current stats - Files processed: 26600, Matches found: 75, Average score: 0.668
+2024-12-10 18:57:55,448 - INFO - Saved interim results at count 26700
+2024-12-10 18:57:55,448 - INFO - Current stats - Files processed: 26700, Matches found: 75, Average score: 0.668
+2024-12-10 18:58:39,085 - INFO - Saved interim results at count 26800
+2024-12-10 18:58:39,085 - INFO - Current stats - Files processed: 26800, Matches found: 75, Average score: 0.668
+2024-12-10 18:59:23,339 - INFO - Saved interim results at count 26900
+2024-12-10 18:59:23,339 - INFO - Current stats - Files processed: 26900, Matches found: 75, Average score: 0.668
+2024-12-10 19:00:07,640 - INFO - Saved interim results at count 27000
+2024-12-10 19:00:07,640 - INFO - Current stats - Files processed: 27000, Matches found: 75, Average score: 0.668
+2024-12-10 19:00:52,787 - INFO - Saved interim results at count 27100
+2024-12-10 19:00:52,787 - INFO - Current stats - Files processed: 27100, Matches found: 75, Average score: 0.668
+2024-12-10 19:01:36,080 - INFO - Saved interim results at count 27200
+2024-12-10 19:01:36,080 - INFO - Current stats - Files processed: 27200, Matches found: 75, Average score: 0.668
+2024-12-10 19:02:20,097 - INFO - Saved interim results at count 27300
+2024-12-10 19:02:20,097 - INFO - Current stats - Files processed: 27300, Matches found: 75, Average score: 0.668
+2024-12-10 19:03:04,351 - INFO - Saved interim results at count 27400
+2024-12-10 19:03:04,351 - INFO - Current stats - Files processed: 27400, Matches found: 75, Average score: 0.668
+2024-12-10 19:03:49,887 - INFO - Saved interim results at count 27500
+2024-12-10 19:03:49,887 - INFO - Current stats - Files processed: 27500, Matches found: 75, Average score: 0.668
+2024-12-10 19:04:33,591 - INFO - Saved interim results at count 27600
+2024-12-10 19:04:33,591 - INFO - Current stats - Files processed: 27600, Matches found: 75, Average score: 0.668
+2024-12-10 19:05:17,557 - INFO - Saved interim results at count 27700
+2024-12-10 19:05:17,557 - INFO - Current stats - Files processed: 27700, Matches found: 75, Average score: 0.668
+2024-12-10 19:06:01,921 - INFO - Saved interim results at count 27800
+2024-12-10 19:06:01,921 - INFO - Current stats - Files processed: 27800, Matches found: 75, Average score: 0.668
+2024-12-10 19:06:46,390 - INFO - Saved interim results at count 27900
+2024-12-10 19:06:46,390 - INFO - Current stats - Files processed: 27900, Matches found: 75, Average score: 0.668
+2024-12-10 19:07:30,893 - INFO - Saved interim results at count 28000
+2024-12-10 19:07:30,893 - INFO - Current stats - Files processed: 28000, Matches found: 75, Average score: 0.668
+2024-12-10 19:08:15,306 - INFO - Saved interim results at count 28100
+2024-12-10 19:08:15,306 - INFO - Current stats - Files processed: 28100, Matches found: 75, Average score: 0.668
+2024-12-10 19:09:00,127 - INFO - Saved interim results at count 28200
+2024-12-10 19:09:00,127 - INFO - Current stats - Files processed: 28200, Matches found: 75, Average score: 0.668
+2024-12-10 19:09:44,523 - INFO - Saved interim results at count 28300
+2024-12-10 19:09:44,523 - INFO - Current stats - Files processed: 28300, Matches found: 75, Average score: 0.668
+2024-12-10 19:10:28,840 - INFO - Saved interim results at count 28400
+2024-12-10 19:10:28,840 - INFO - Current stats - Files processed: 28400, Matches found: 75, Average score: 0.668
+2024-12-10 19:11:13,900 - INFO - Saved interim results at count 28500
+2024-12-10 19:11:13,900 - INFO - Current stats - Files processed: 28500, Matches found: 75, Average score: 0.668
+2024-12-10 19:11:58,236 - INFO - Saved interim results at count 28600
+2024-12-10 19:11:58,236 - INFO - Current stats - Files processed: 28600, Matches found: 75, Average score: 0.668
+2024-12-10 19:12:42,780 - INFO - Saved interim results at count 28700
+2024-12-10 19:12:42,780 - INFO - Current stats - Files processed: 28700, Matches found: 75, Average score: 0.668
+2024-12-10 19:13:27,236 - INFO - Saved interim results at count 28800
+2024-12-10 19:13:27,236 - INFO - Current stats - Files processed: 28800, Matches found: 75, Average score: 0.668
+2024-12-10 19:14:11,785 - INFO - Saved interim results at count 28900
+2024-12-10 19:14:11,785 - INFO - Current stats - Files processed: 28900, Matches found: 75, Average score: 0.668
+2024-12-10 19:14:55,908 - INFO - Saved interim results at count 29000
+2024-12-10 19:14:55,908 - INFO - Current stats - Files processed: 29000, Matches found: 75, Average score: 0.668
+2024-12-10 19:15:40,363 - INFO - Saved interim results at count 29100
+2024-12-10 19:15:40,363 - INFO - Current stats - Files processed: 29100, Matches found: 75, Average score: 0.668
+2024-12-10 19:16:25,173 - INFO - Saved interim results at count 29200
+2024-12-10 19:16:25,173 - INFO - Current stats - Files processed: 29200, Matches found: 75, Average score: 0.668
+2024-12-10 19:17:09,816 - INFO - Saved interim results at count 29300
+2024-12-10 19:17:09,816 - INFO - Current stats - Files processed: 29300, Matches found: 75, Average score: 0.668
+2024-12-10 19:17:53,514 - INFO - Saved interim results at count 29400
+2024-12-10 19:17:53,515 - INFO - Current stats - Files processed: 29400, Matches found: 75, Average score: 0.668
+2024-12-10 19:18:37,842 - INFO - Saved interim results at count 29500
+2024-12-10 19:18:37,842 - INFO - Current stats - Files processed: 29500, Matches found: 75, Average score: 0.668
+2024-12-10 19:19:21,539 - INFO - Saved interim results at count 29600
+2024-12-10 19:19:21,539 - INFO - Current stats - Files processed: 29600, Matches found: 75, Average score: 0.668
+2024-12-10 19:20:04,723 - INFO - Saved interim results at count 29700
+2024-12-10 19:20:04,723 - INFO - Current stats - Files processed: 29700, Matches found: 75, Average score: 0.668
+2024-12-10 19:20:48,013 - INFO - Saved interim results at count 29800
+2024-12-10 19:20:48,013 - INFO - Current stats - Files processed: 29800, Matches found: 75, Average score: 0.668
+2024-12-10 19:21:30,884 - INFO - Saved interim results at count 29900
+2024-12-10 19:21:30,884 - INFO - Current stats - Files processed: 29900, Matches found: 75, Average score: 0.668
+2024-12-10 19:22:14,756 - INFO - Saved interim results at count 30000
+2024-12-10 19:22:14,756 - INFO - Current stats - Files processed: 30000, Matches found: 75, Average score: 0.668
+2024-12-10 19:22:58,153 - INFO - Saved interim results at count 30100
+2024-12-10 19:22:58,153 - INFO - Current stats - Files processed: 30100, Matches found: 75, Average score: 0.668
+2024-12-10 19:23:41,686 - INFO - Saved interim results at count 30200
+2024-12-10 19:23:41,686 - INFO - Current stats - Files processed: 30200, Matches found: 75, Average score: 0.668
+2024-12-10 19:24:24,949 - INFO - Saved interim results at count 30300
+2024-12-10 19:24:24,949 - INFO - Current stats - Files processed: 30300, Matches found: 75, Average score: 0.668
+2024-12-10 19:25:09,009 - INFO - Saved interim results at count 30400
+2024-12-10 19:25:09,009 - INFO - Current stats - Files processed: 30400, Matches found: 75, Average score: 0.668
+2024-12-10 19:25:53,948 - INFO - Saved interim results at count 30500
+2024-12-10 19:25:53,948 - INFO - Current stats - Files processed: 30500, Matches found: 75, Average score: 0.668
+2024-12-10 19:26:37,666 - INFO - Saved interim results at count 30600
+2024-12-10 19:26:37,666 - INFO - Current stats - Files processed: 30600, Matches found: 75, Average score: 0.668
+2024-12-10 19:27:22,065 - INFO - Saved interim results at count 30700
+2024-12-10 19:27:22,065 - INFO - Current stats - Files processed: 30700, Matches found: 75, Average score: 0.668
+2024-12-10 19:28:05,609 - INFO - Saved interim results at count 30800
+2024-12-10 19:28:05,609 - INFO - Current stats - Files processed: 30800, Matches found: 75, Average score: 0.668
+2024-12-10 19:28:49,903 - INFO - Saved interim results at count 30900
+2024-12-10 19:28:49,903 - INFO - Current stats - Files processed: 30900, Matches found: 75, Average score: 0.668
+2024-12-10 19:29:33,961 - INFO - Saved interim results at count 31000
+2024-12-10 19:29:33,961 - INFO - Current stats - Files processed: 31000, Matches found: 75, Average score: 0.668
+2024-12-10 19:30:18,214 - INFO - Saved interim results at count 31100
+2024-12-10 19:30:18,214 - INFO - Current stats - Files processed: 31100, Matches found: 75, Average score: 0.668
+2024-12-10 19:31:02,336 - INFO - Saved interim results at count 31200
+2024-12-10 19:31:02,336 - INFO - Current stats - Files processed: 31200, Matches found: 75, Average score: 0.668
+2024-12-10 19:31:47,365 - INFO - Saved interim results at count 31300
+2024-12-10 19:31:47,365 - INFO - Current stats - Files processed: 31300, Matches found: 75, Average score: 0.668
+2024-12-10 19:32:31,398 - INFO - Saved interim results at count 31400
+2024-12-10 19:32:31,398 - INFO - Current stats - Files processed: 31400, Matches found: 75, Average score: 0.668
+2024-12-10 19:33:15,458 - INFO - Saved interim results at count 31500
+2024-12-10 19:33:15,458 - INFO - Current stats - Files processed: 31500, Matches found: 75, Average score: 0.668
+2024-12-10 19:33:59,475 - INFO - Saved interim results at count 31600
+2024-12-10 19:33:59,475 - INFO - Current stats - Files processed: 31600, Matches found: 75, Average score: 0.668
+2024-12-10 19:34:44,754 - INFO - Saved interim results at count 31700
+2024-12-10 19:34:44,754 - INFO - Current stats - Files processed: 31700, Matches found: 75, Average score: 0.668
+2024-12-10 19:35:28,217 - INFO - Saved interim results at count 31800
+2024-12-10 19:35:28,217 - INFO - Current stats - Files processed: 31800, Matches found: 75, Average score: 0.668
+2024-12-10 19:36:12,059 - INFO - Saved interim results at count 31900
+2024-12-10 19:36:12,059 - INFO - Current stats - Files processed: 31900, Matches found: 75, Average score: 0.668
+2024-12-10 19:36:55,481 - INFO - Saved interim results at count 32000
+2024-12-10 19:36:55,481 - INFO - Current stats - Files processed: 32000, Matches found: 75, Average score: 0.668
+2024-12-10 19:37:39,612 - INFO - Saved interim results at count 32100
+2024-12-10 19:37:39,612 - INFO - Current stats - Files processed: 32100, Matches found: 75, Average score: 0.668
+2024-12-10 19:38:24,118 - INFO - Saved interim results at count 32200
+2024-12-10 19:38:24,118 - INFO - Current stats - Files processed: 32200, Matches found: 75, Average score: 0.668
+2024-12-10 19:39:07,463 - INFO - Saved interim results at count 32300
+2024-12-10 19:39:07,464 - INFO - Current stats - Files processed: 32300, Matches found: 75, Average score: 0.668
+2024-12-10 19:39:51,139 - INFO - Saved interim results at count 32400
+2024-12-10 19:39:51,139 - INFO - Current stats - Files processed: 32400, Matches found: 75, Average score: 0.668
+2024-12-10 19:40:35,661 - INFO - Saved interim results at count 32500
+2024-12-10 19:40:35,661 - INFO - Current stats - Files processed: 32500, Matches found: 75, Average score: 0.668
+2024-12-10 19:41:19,741 - INFO - Saved interim results at count 32600
+2024-12-10 19:41:19,741 - INFO - Current stats - Files processed: 32600, Matches found: 75, Average score: 0.668
+2024-12-10 19:42:04,184 - INFO - Saved interim results at count 32700
+2024-12-10 19:42:04,184 - INFO - Current stats - Files processed: 32700, Matches found: 75, Average score: 0.668
+2024-12-10 19:42:48,755 - INFO - Saved interim results at count 32800
+2024-12-10 19:42:48,755 - INFO - Current stats - Files processed: 32800, Matches found: 75, Average score: 0.668
+2024-12-10 19:43:32,575 - INFO - Saved interim results at count 32900
+2024-12-10 19:43:32,575 - INFO - Current stats - Files processed: 32900, Matches found: 75, Average score: 0.668
+2024-12-10 19:44:16,554 - INFO - Saved interim results at count 33000
+2024-12-10 19:44:16,554 - INFO - Current stats - Files processed: 33000, Matches found: 75, Average score: 0.668
+2024-12-10 19:44:59,995 - INFO - Saved interim results at count 33100
+2024-12-10 19:44:59,995 - INFO - Current stats - Files processed: 33100, Matches found: 75, Average score: 0.668
+2024-12-10 19:45:43,944 - INFO - Saved interim results at count 33200
+2024-12-10 19:45:43,944 - INFO - Current stats - Files processed: 33200, Matches found: 75, Average score: 0.668
+2024-12-10 19:46:27,831 - INFO - Saved interim results at count 33300
+2024-12-10 19:46:27,831 - INFO - Current stats - Files processed: 33300, Matches found: 75, Average score: 0.668
+2024-12-10 19:47:11,869 - INFO - Saved interim results at count 33400
+2024-12-10 19:47:11,870 - INFO - Current stats - Files processed: 33400, Matches found: 75, Average score: 0.668
+2024-12-10 19:47:55,588 - INFO - Saved interim results at count 33500
+2024-12-10 19:47:55,588 - INFO - Current stats - Files processed: 33500, Matches found: 75, Average score: 0.668
+2024-12-10 19:48:40,823 - INFO - Saved interim results at count 33600
+2024-12-10 19:48:40,823 - INFO - Current stats - Files processed: 33600, Matches found: 75, Average score: 0.668
+2024-12-10 19:49:24,981 - INFO - Saved interim results at count 33700
+2024-12-10 19:49:24,981 - INFO - Current stats - Files processed: 33700, Matches found: 75, Average score: 0.668
+2024-12-10 19:50:09,067 - INFO - Saved interim results at count 33800
+2024-12-10 19:50:09,067 - INFO - Current stats - Files processed: 33800, Matches found: 75, Average score: 0.668
+2024-12-10 19:50:53,121 - INFO - Saved interim results at count 33900
+2024-12-10 19:50:53,121 - INFO - Current stats - Files processed: 33900, Matches found: 75, Average score: 0.668
+2024-12-10 19:51:37,974 - INFO - Saved interim results at count 34000
+2024-12-10 19:51:37,974 - INFO - Current stats - Files processed: 34000, Matches found: 75, Average score: 0.668
+2024-12-10 19:52:21,603 - INFO - Saved interim results at count 34100
+2024-12-10 19:52:21,603 - INFO - Current stats - Files processed: 34100, Matches found: 75, Average score: 0.668
+2024-12-10 19:53:06,007 - INFO - Saved interim results at count 34200
+2024-12-10 19:53:06,007 - INFO - Current stats - Files processed: 34200, Matches found: 75, Average score: 0.668
+2024-12-10 19:53:50,454 - INFO - Saved interim results at count 34300
+2024-12-10 19:53:50,454 - INFO - Current stats - Files processed: 34300, Matches found: 75, Average score: 0.668
+2024-12-10 19:54:34,681 - INFO - Saved interim results at count 34400
+2024-12-10 19:54:34,681 - INFO - Current stats - Files processed: 34400, Matches found: 75, Average score: 0.668
+2024-12-10 19:55:19,156 - INFO - Saved interim results at count 34500
+2024-12-10 19:55:19,156 - INFO - Current stats - Files processed: 34500, Matches found: 75, Average score: 0.668
+2024-12-10 19:56:01,845 - INFO - Saved interim results at count 34600
+2024-12-10 19:56:01,845 - INFO - Current stats - Files processed: 34600, Matches found: 75, Average score: 0.668
+2024-12-10 19:56:46,450 - INFO - Saved interim results at count 34700
+2024-12-10 19:56:46,450 - INFO - Current stats - Files processed: 34700, Matches found: 75, Average score: 0.668
+2024-12-10 19:57:31,401 - INFO - Saved interim results at count 34800
+2024-12-10 19:57:31,401 - INFO - Current stats - Files processed: 34800, Matches found: 75, Average score: 0.668
+2024-12-10 19:58:15,977 - INFO - Saved interim results at count 34900
+2024-12-10 19:58:15,977 - INFO - Current stats - Files processed: 34900, Matches found: 75, Average score: 0.668
+2024-12-10 19:59:00,157 - INFO - Saved interim results at count 35000
+2024-12-10 19:59:00,158 - INFO - Current stats - Files processed: 35000, Matches found: 75, Average score: 0.668
+2024-12-10 19:59:44,414 - INFO - Saved interim results at count 35100
+2024-12-10 19:59:44,414 - INFO - Current stats - Files processed: 35100, Matches found: 75, Average score: 0.668
+2024-12-10 20:00:29,293 - INFO - Saved interim results at count 35200
+2024-12-10 20:00:29,293 - INFO - Current stats - Files processed: 35200, Matches found: 75, Average score: 0.668
+2024-12-10 20:01:13,467 - INFO - Saved interim results at count 35300
+2024-12-10 20:01:13,467 - INFO - Current stats - Files processed: 35300, Matches found: 75, Average score: 0.668
+2024-12-10 20:01:58,034 - INFO - Saved interim results at count 35400
+2024-12-10 20:01:58,034 - INFO - Current stats - Files processed: 35400, Matches found: 75, Average score: 0.668
+2024-12-10 20:02:43,140 - INFO - Saved interim results at count 35500
+2024-12-10 20:02:43,140 - INFO - Current stats - Files processed: 35500, Matches found: 75, Average score: 0.668
+2024-12-10 20:03:27,984 - INFO - Saved interim results at count 35600
+2024-12-10 20:03:27,984 - INFO - Current stats - Files processed: 35600, Matches found: 75, Average score: 0.668
+2024-12-10 20:04:11,987 - INFO - Saved interim results at count 35700
+2024-12-10 20:04:11,987 - INFO - Current stats - Files processed: 35700, Matches found: 75, Average score: 0.668
+2024-12-10 20:04:56,185 - INFO - Saved interim results at count 35800
+2024-12-10 20:04:56,185 - INFO - Current stats - Files processed: 35800, Matches found: 75, Average score: 0.668
+2024-12-10 20:05:41,439 - INFO - Saved interim results at count 35900
+2024-12-10 20:05:41,439 - INFO - Current stats - Files processed: 35900, Matches found: 75, Average score: 0.668
+2024-12-10 20:06:26,213 - INFO - Saved interim results at count 36000
+2024-12-10 20:06:26,213 - INFO - Current stats - Files processed: 36000, Matches found: 75, Average score: 0.668
+2024-12-10 20:07:10,018 - INFO - Saved interim results at count 36100
+2024-12-10 20:07:10,018 - INFO - Current stats - Files processed: 36100, Matches found: 75, Average score: 0.668
+2024-12-10 20:07:54,435 - INFO - Saved interim results at count 36200
+2024-12-10 20:07:54,435 - INFO - Current stats - Files processed: 36200, Matches found: 75, Average score: 0.668
+2024-12-10 20:08:38,806 - INFO - Saved interim results at count 36300
+2024-12-10 20:08:38,806 - INFO - Current stats - Files processed: 36300, Matches found: 75, Average score: 0.668
+2024-12-10 20:09:23,706 - INFO - Saved interim results at count 36400
+2024-12-10 20:09:23,706 - INFO - Current stats - Files processed: 36400, Matches found: 75, Average score: 0.668
+2024-12-10 20:10:07,237 - INFO - Saved interim results at count 36500
+2024-12-10 20:10:07,237 - INFO - Current stats - Files processed: 36500, Matches found: 75, Average score: 0.668
+2024-12-10 20:10:51,345 - INFO - Saved interim results at count 36600
+2024-12-10 20:10:51,345 - INFO - Current stats - Files processed: 36600, Matches found: 75, Average score: 0.668
+2024-12-10 20:11:35,276 - INFO - Saved interim results at count 36700
+2024-12-10 20:11:35,276 - INFO - Current stats - Files processed: 36700, Matches found: 75, Average score: 0.668
+2024-12-10 20:12:19,702 - INFO - Saved interim results at count 36800
+2024-12-10 20:12:19,702 - INFO - Current stats - Files processed: 36800, Matches found: 75, Average score: 0.668
+2024-12-10 20:13:03,726 - INFO - Saved interim results at count 36900
+2024-12-10 20:13:03,726 - INFO - Current stats - Files processed: 36900, Matches found: 75, Average score: 0.668
+2024-12-10 20:13:47,734 - INFO - Saved interim results at count 37000
+2024-12-10 20:13:47,734 - INFO - Current stats - Files processed: 37000, Matches found: 75, Average score: 0.668
+2024-12-10 20:14:31,335 - INFO - Saved interim results at count 37100
+2024-12-10 20:14:31,335 - INFO - Current stats - Files processed: 37100, Matches found: 75, Average score: 0.668
+2024-12-10 20:15:15,836 - INFO - Saved interim results at count 37200
+2024-12-10 20:15:15,836 - INFO - Current stats - Files processed: 37200, Matches found: 75, Average score: 0.668
+2024-12-10 20:15:59,952 - INFO - Saved interim results at count 37300
+2024-12-10 20:15:59,953 - INFO - Current stats - Files processed: 37300, Matches found: 75, Average score: 0.668
+2024-12-10 20:16:43,504 - INFO - Saved interim results at count 37400
+2024-12-10 20:16:43,504 - INFO - Current stats - Files processed: 37400, Matches found: 75, Average score: 0.668
+2024-12-10 20:17:27,547 - INFO - Saved interim results at count 37500
+2024-12-10 20:17:27,547 - INFO - Current stats - Files processed: 37500, Matches found: 75, Average score: 0.668
+2024-12-10 20:18:12,270 - INFO - Saved interim results at count 37600
+2024-12-10 20:18:12,270 - INFO - Current stats - Files processed: 37600, Matches found: 75, Average score: 0.668
+2024-12-10 20:18:56,649 - INFO - Saved interim results at count 37700
+2024-12-10 20:18:56,649 - INFO - Current stats - Files processed: 37700, Matches found: 75, Average score: 0.668
+2024-12-10 20:19:42,103 - INFO - Saved interim results at count 37800
+2024-12-10 20:19:42,103 - INFO - Current stats - Files processed: 37800, Matches found: 75, Average score: 0.668
+2024-12-10 20:20:15,771 - INFO - Saved interim results at count 37877
+2024-12-10 20:20:15,771 - INFO - Current stats - Files processed: 37877, Matches found: 75, Average score: 0.668
+2024-12-10 20:20:15,771 - INFO - Matching complete!
+2024-12-10 20:20:15,772 - ERROR - Error during execution: list indices must be integers or slices, not str
+Traceback (most recent call last):
+  File "/home/vincent/savc/scripts/artwork_music_matcher.py", line 1039, in main
+    print(f"Total matches: {matches['statistics']['total_matches']}")
+                            ~~~~~~~^^^^^^^^^^^^^^
+TypeError: list indices must be integers or slices, not str
