@@ -56,7 +56,7 @@ class MusicGenerationTransformer(nn.Module):
     def __init__(
         self,
         vit_name="google/vit-large-patch16-384",
-        vit_config=None,  # Add this parameter
+        vit_config=None,
         d_model=1024,
         nhead=16,
         num_encoder_layers=8,
@@ -71,13 +71,28 @@ class MusicGenerationTransformer(nn.Module):
     ):
         super().__init__()
         self.vit = ViTModel.from_pretrained("google/vit-large-patch16-384")
-        # Freeze ViT parameters if desired
-        for param in self.vit.parameters():
-            param.requires_grad = False
+        
+        # Only freeze the ViT if you specifically want to
+        # Comment these lines out to fine-tune the entire model
+        # for param in self.vit.parameters():
+        #     param.requires_grad = False
+
+        # Make sure the projection layer is trainable
+        self.vit_projection = nn.Sequential(
+            nn.Linear(self.vit.config.hidden_size, d_model * 2),
+            nn.GELU(),
+            nn.Dropout(dropout, 0.1),
+            nn.Linear(d_model * 2, d_model)
+        )
+        
+        # Ensure all parameters have requires_grad=True
+        for param in self.vit_projection.parameters():
+            param.requires_grad = True
 
         self.tokenizer = tokenizer
         self.max_seq_length = max_seq_length
         self.temperature = temperature
+        self.min_teacher_forcing = min_teacher_forcing
 
         self.vit_projection = nn.Sequential(
             nn.Linear(self.vit.config.hidden_size, d_model * 2),
@@ -124,68 +139,64 @@ class MusicGenerationTransformer(nn.Module):
         return tokens == self.tokenizer.special_tokens['PAD']
 
     def forward(self, images, target_sequences=None, teacher_forcing_ratio=1.0):
-        """
-        Forward pass for the model. Supports teacher forcing during training.
-
-        Args:
-            images (torch.Tensor): Input images passed through the vision transformer.
-            target_sequences (torch.Tensor, optional): Token sequences for training.
-            teacher_forcing_ratio (float, optional): Probability of using the ground truth token
-                for the next step. Defaults to 1.0.
-
-        Returns:
-            torch.Tensor: Model output logits.
-        """
-        with torch.amp.autocast(device_type='cuda', dtype=torch.float16):
-            vit_output = self.vit(images)
-            image_features = (
-                vit_output.last_hidden_state
-                if hasattr(vit_output, "last_hidden_state")
-                else vit_output[0]
-            )
-
+        # Remove the autocast context to avoid potential gradient issues
+        # with mixed precision during training
+        vit_output = self.vit(images)
+        image_features = vit_output.last_hidden_state if hasattr(vit_output, 'last_hidden_state') else vit_output[0]
+        
+        # Ensure the features maintain gradients
         encoder_output = self.vit_projection(image_features)
 
-        # If no targets or not training, perform generation
+        # If no target provided or not training, use generate (for inference)
         if target_sequences is None or not self.training:
             return self.generate(encoder_output)
 
-        # Prepare decoder inputs
-        batch_size, seq_len = target_sequences.size()
-        device = target_sequences.device
+        batch_size = target_sequences.size(0)
+        max_len = target_sequences.size(1)
+        vocab_size = self.tokenizer.vocab_size
 
-        token_embeddings = self.token_embedding(target_sequences)
-        token_embeddings = self.pos_encoder(token_embeddings)
+        # Initialize output tensor
+        outputs = torch.zeros(batch_size, max_len, vocab_size).to(target_sequences.device)
+        
+        # Initial input is BOS token
+        decoder_input = self.token_embedding(target_sequences)
+        decoder_input = self.pos_encoder(decoder_input)
 
-        tgt_mask = self.generate_square_subsequent_mask(seq_len).to(device)
+        # Create masks
+        tgt_mask = self.generate_square_subsequent_mask(max_len).to(target_sequences.device)
         tgt_padding_mask = self.create_padding_mask(target_sequences)
 
-        outputs = []
-        decoder_input = target_sequences[:, :1]  # Start with BOS token
-
-        for t in range(1, seq_len):
-            tgt_embeddings = self.token_embedding(decoder_input)
-            tgt_embeddings = self.pos_encoder(tgt_embeddings)
-
+        # Teacher forcing: use ground truth as input for next step with probability teacher_forcing_ratio
+        use_teacher_forcing = random.random() < max(teacher_forcing_ratio, self.min_teacher_forcing)
+        
+        if use_teacher_forcing:
+            # Standard single-pass decoding with teacher forcing
             transformer_output = self.transformer(
                 src=encoder_output,
-                tgt=tgt_embeddings,
-                tgt_mask=tgt_mask[: decoder_input.size(1), : decoder_input.size(1)],
-                tgt_key_padding_mask=tgt_padding_mask[:, : decoder_input.size(1)],
+                tgt=decoder_input,
+                tgt_mask=tgt_mask,
+                tgt_key_padding_mask=tgt_padding_mask
             )
+            outputs = self.output(transformer_output) / self.temperature
+        else:
+            # Generate step by step without teacher forcing
+            current_input = decoder_input[:, 0:1]  # Start with BOS token
+            for t in range(max_len):
+                transformer_output = self.transformer(
+                    src=encoder_output,
+                    tgt=current_input,
+                    tgt_mask=self.generate_square_subsequent_mask(t + 1).to(target_sequences.device)
+                )
+                current_output = self.output(transformer_output[:, -1:]) / self.temperature
+                outputs[:, t:t+1] = current_output
+                
+                if t < max_len - 1:
+                    # Use predicted token as next input
+                    pred_token = current_output.argmax(dim=-1)
+                    next_input = self.token_embedding(pred_token)
+                    next_input = self.pos_encoder(next_input)
+                    current_input = torch.cat([current_input, next_input], dim=1)
 
-            logits = self.output(transformer_output[:, -1, :])  # Take the last step's output
-            outputs.append(logits)
-
-            # Apply teacher forcing
-            if torch.rand(1).item() < teacher_forcing_ratio:
-                next_token = target_sequences[:, t:t + 1]
-            else:
-                next_token = logits.argmax(dim=-1, keepdim=True)
-
-            decoder_input = torch.cat([decoder_input, next_token], dim=1)
-
-        outputs = torch.stack(outputs, dim=1)
         return outputs
 
 

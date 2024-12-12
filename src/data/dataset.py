@@ -358,8 +358,8 @@ class ImageMIDIDataset(Dataset):
         image = Image.open(pair['image_path']).convert('RGB')
         image_tensor = self.transform(image)
         
-        # Get tokens and convert to tensor first
-        tokens = torch.tensor(pair['tokens'][:self.max_seq_length])
+        # Properly clone and detach tokens
+        tokens = pair['tokens'][:self.max_seq_length].clone().detach()
         
         # Pad if necessary using torch operations
         if len(tokens) < self.max_seq_length:
@@ -374,7 +374,7 @@ class ImageMIDIDataset(Dataset):
             'similarity_score': pair['similarity_score'],
             'emotional_match': pair['emotional_match'],
             'artwork_info': pair['artwork_info']
-    }
+        }
 
 def create_dataloader(
     dataset: ImageMIDIDataset,
