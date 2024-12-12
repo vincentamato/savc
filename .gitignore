@@ -11,3 +11,5 @@ wandb
 *.zip
 *.txt
 *.log
+cache
+checkpoints

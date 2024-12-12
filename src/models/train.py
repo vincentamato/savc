@@ -68,9 +68,9 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Music Generation Training Script')
     
     # Enhanced training hyperparameters
-    parser.add_argument('--batch_size', type=int, default=32,
+    parser.add_argument('--batch_size', type=int, default=8,
                         help='Batch size for training (default: 32)')
-    parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
+    parser.add_argument('--gradient_accumulation_steps', type=int, default=2,
                         help='Number of gradient accumulation steps (default: 1)')
     parser.add_argument('--epochs', type=int, default=100,
                         help='Number of epochs to train (default: 100)')
@@ -127,6 +127,9 @@ def parse_args():
                         help='WandB project name (default: svac)')
     parser.add_argument('--run_name', type=str, default=None,
                         help='WandB run name (default: timestamp)')
+    
+    args = parser.parse_args()
+    print(f"Parsed args: {vars(args)}") 
     
     return parser.parse_args()
 
@@ -206,50 +209,33 @@ def get_lr_scheduler(optimizer, args, total_steps):
     
     return LambdaLR(optimizer, lr_lambda)
 
-def train_one_batch(model, batch, optimizer, scheduler, scaler, criterion, device, epoch, args, accumulating=True):
+def train_one_batch(model, batch, optimizer, scheduler, criterion, device, epoch, args, accumulating=True):
     images = batch['image'].to(device, non_blocking=True)
     tokens = batch['tokens'].to(device, non_blocking=True)
     
-    autocast_dtype = {
-        'fp32': torch.float32,
-        'fp16': torch.float16,
-        'bf16': torch.bfloat16
-    }[args.precision]
+    teacher_ratio = scheduled_teacher_forcing(
+        epoch,
+        min_ratio=0.2,
+        max_ratio=1.0,
+        num_epochs=args.epochs
+    )
     
-    autocast_context = autocast(device_type='cuda', dtype=autocast_dtype) if args.precision != 'fp32' else nullcontext()
+    outputs = model(images, tokens, teacher_forcing_ratio=teacher_ratio)
+    shift_logits = outputs[..., :-1, :].contiguous()
+    shift_labels = tokens[..., 1:].contiguous()
+    loss = criterion(
+        shift_logits.view(-1, shift_logits.size(-1)),
+        shift_labels.view(-1)
+    )
     
-    with autocast_context:
-        teacher_ratio = scheduled_teacher_forcing(
-            epoch,
-            min_ratio=0.2,
-            max_ratio=1.0,
-            num_epochs=args.epochs
-        )
-        outputs = model(images, tokens, teacher_forcing_ratio=teacher_ratio)
-        shift_logits = outputs[..., :-1, :].contiguous()
-        shift_labels = tokens[..., 1:].contiguous()
-        loss = criterion(
-            shift_logits.view(-1, shift_logits.size(-1)),
-            shift_labels.view(-1)
-        )
-        if accumulating:
-            loss = loss / args.gradient_accumulation_steps
+    if accumulating:
+        loss = loss / args.gradient_accumulation_steps
     
-    if scaler is not None:
-        scaler.scale(loss).backward()
-    else:
-        loss.backward()
+    loss.backward()
     
     if not accumulating:
-        if scaler is not None:
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
-            scaler.step(optimizer)
-            scaler.update()
-        else:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
-            optimizer.step()
-            
+        torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+        optimizer.step()
         optimizer.zero_grad(set_to_none=True)
         scheduler.step()
     
@@ -260,15 +246,7 @@ def validate(model, val_loader, criterion, device, args):
     total_loss = 0
     num_batches = 0
     
-    autocast_dtype = {
-        'fp32': torch.float32,
-        'fp16': torch.float16,
-        'bf16': torch.bfloat16
-    }[args.precision]
-    
-    autocast_context = autocast(device_type='cuda', dtype=autocast_dtype) if args.precision != 'fp32' else nullcontext()
-    
-    with torch.no_grad(), autocast_context:
+    with torch.no_grad():
         for batch in val_loader:
             images = batch['image'].to(device, non_blocking=True)
             tokens = batch['tokens'].to(device, non_blocking=True)
@@ -288,12 +266,12 @@ def validate(model, val_loader, criterion, device, args):
 
 def train(args):
     # Setup
+    if not hasattr(args, 'run_name') or args.run_name is None:
+        args.run_name = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
     save_dir = Path(args.save_dir) / args.run_name
     save_dir.mkdir(parents=True, exist_ok=True)
     logger = setup_logging(save_dir)
-    
-    if args.run_name is None:
-        args.run_name = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     wandb.init(
         project=args.project_name,
@@ -303,7 +281,7 @@ def train(args):
     
     # Device setup
     device = torch.device('cuda')
-    torch.backends.cuda.matmul.allow_tf32 = True  # Enable TF32 for faster training
+    torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.benchmark = True
     
     # Data loading
@@ -333,14 +311,8 @@ def train(args):
     model = create_model(args)
     model = model.to(device)
     
-    # Initialize ViT weights
-    if hasattr(model.vit, 'pooler'):
-        nn.init.normal_(model.vit.pooler.dense.weight, std=0.02)
-        nn.init.zeros_(model.vit.pooler.dense.bias)
-    
     wandb.watch(model, log_freq=100)
     
-    # Training setup
     criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
     optimizer = optim.AdamW(
         model.parameters(),
@@ -349,8 +321,8 @@ def train(args):
         betas=(0.9, 0.95)
     )
     
-    scaler = amp.GradScaler('cuda') if args.precision != 'fp32' else None
-    scheduler = get_lr_scheduler(optimizer, args, len(train_loader) * args.epochs)
+    total_steps = len(train_loader) * args.epochs
+    scheduler = get_lr_scheduler(optimizer, args, total_steps)
     early_stopping = EarlyStopping(patience=args.patience)
     gradient_flow = GradientFlow(model)
     
@@ -361,7 +333,6 @@ def train(args):
         model.train()
         train_losses = []
         
-        # Training epoch
         with tqdm(train_loader, desc=f'Epoch {epoch} - Train') as train_pbar:
             optimizer.zero_grad(set_to_none=True)
             
@@ -369,8 +340,15 @@ def train(args):
                 is_accumulating = (batch_idx + 1) % args.gradient_accumulation_steps != 0
                 
                 loss = train_one_batch(
-                    model, batch, optimizer, scheduler, scaler, criterion,
-                    device, epoch, args, accumulating=is_accumulating
+                    model=model,
+                    batch=batch,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    criterion=criterion,
+                    device=device,
+                    epoch=epoch,
+                    args=args,
+                    accumulating=is_accumulating
                 )
                 
                 train_losses.append(loss)
