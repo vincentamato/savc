@@ -78,7 +78,7 @@ def parse_args():
                        help='Minimum learning rate')
     parser.add_argument('--weight_decay', type=float, default=0.01,
                        help='Weight decay for AdamW')
-    parser.add_argument('--warmup_steps', type=int, default=500,
+    parser.add_argument('--warmup_steps', type=int, default=100,
                        help='Number of warmup steps for learning rate scheduler')
     parser.add_argument('--patience', type=int, default=10,
                        help='Patience for early stopping')
@@ -86,17 +86,17 @@ def parse_args():
                        help='Label smoothing factor')
     
     # Model configuration
-    parser.add_argument('--d_model', type=int, default=768,
+    parser.add_argument('--d_model', type=int, default=1024,
                        help='Transformer dimension')
-    parser.add_argument('--nhead', type=int, default=12,
+    parser.add_argument('--nhead', type=int, default=16,
                        help='Number of attention heads')
-    parser.add_argument('--num_encoder_layers', type=int, default=6,
+    parser.add_argument('--num_encoder_layers', type=int, default=8,
                        help='Number of encoder layers')
-    parser.add_argument('--num_decoder_layers', type=int, default=6,
+    parser.add_argument('--num_decoder_layers', type=int, default=8,
                        help='Number of decoder layers')
-    parser.add_argument('--dim_feedforward', type=int, default=2048,  # Changed from 3072
+    parser.add_argument('--dim_feedforward', type=int, default=4096,  # Changed from 3072
                        help='Feedforward dimension')
-    parser.add_argument('--dropout', type=float, default=0.1,
+    parser.add_argument('--dropout', type=float, default=0.15,
                        help='Dropout rate')
     parser.add_argument('--max_seq_length', type=int, default=1024,  # Changed from 1024
                        help='Maximum sequence length')
@@ -183,26 +183,19 @@ def scheduled_teacher_forcing(epoch, min_ratio=0.2, max_ratio=1.0, num_epochs=10
 def get_lr_scheduler(optimizer, args, total_steps):
     """Creates a learning rate scheduler with faster warmup and cosine decay with restarts."""
     def lr_lambda(current_step):
-        # Faster warmup
         if current_step < args.warmup_steps:
             return float(current_step) / float(max(1, args.warmup_steps))
         
-        # Calculate progress for cosine decay
-        progress = float(current_step - args.warmup_steps) / float(max(1, total_steps - args.warmup_steps))
-        
-        # Add warm restarts every N steps
-        restart_every = 1000
+        # More aggressive restarts
+        restart_every = 500  # More frequent restarts
         num_restarts = (current_step - args.warmup_steps) // restart_every
         restart_progress = (current_step - args.warmup_steps - num_restarts * restart_every) / restart_every
         
-        # Cosine decay with restarts
+        # Higher amplitude cycles
         cosine = 0.5 * (1 + math.cos(math.pi * restart_progress))
+        restart_amplitude = 0.7 ** num_restarts  # Less decay in amplitude
         
-        # Gradually reduce the amplitude of restarts
-        restart_amplitude = 0.5 ** num_restarts
-        final_factor = max(args.min_lr / args.lr, cosine * restart_amplitude + (1 - restart_amplitude))
-        
-        return final_factor
+        return max(args.min_lr / args.lr, cosine * restart_amplitude + (1 - restart_amplitude))
 
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 

@@ -74,8 +74,8 @@ class MusicGenerationTransformer(nn.Module):
         
         # Only freeze the ViT if you specifically want to
         # Comment these lines out to fine-tune the entire model
-        # for param in self.vit.parameters():
-        #     param.requires_grad = False
+        for param in self.vit.parameters():
+            param.requires_grad = False
 
         # Make sure the projection layer is trainable
         self.vit_projection = nn.Sequential(
@@ -84,10 +84,6 @@ class MusicGenerationTransformer(nn.Module):
             nn.Dropout(dropout, 0.1),
             nn.Linear(d_model * 2, d_model)
         )
-        
-        # Ensure all parameters have requires_grad=True
-        for param in self.vit_projection.parameters():
-            param.requires_grad = True
 
         self.tokenizer = tokenizer
         self.max_seq_length = max_seq_length
