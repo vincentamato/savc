@@ -13,5 +13,4 @@ wandb
 *.log
 cache
 checkpoints
-
 *.pkl

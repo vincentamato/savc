@@ -4,21 +4,19 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-import torch.amp as amp
 from tqdm import tqdm
 import wandb
 import argparse
 from datetime import datetime
 import numpy as np
-from torch.cuda.amp import autocast
-from torch.nn.parallel import DistributedDataParallel as DDP
 import math
 import sys
 import logging
-from contextlib import nullcontext
+from accelerate import Accelerator
+import gc
 
-from src.models.model import MusicGenerationTransformer, MIDITokenizer
-from src.data.dataset import get_dataset
+from src.models.model import MusicGenerationTransformer
+from src.data.dataset import get_dataset, MIDITokenizer
 
 class EarlyStopping:
     def __init__(self, patience=10, min_delta=0.0001, mode='min'):
@@ -67,11 +65,11 @@ class GradientFlow:
 def parse_args():
     parser = argparse.ArgumentParser(description='Music Generation Training Script')
     
-    # Enhanced training hyperparameters
-    parser.add_argument('--batch_size', type=int, default=8,
-                        help='Batch size for training (default: 32)')
+    # Training hyperparameters
+    parser.add_argument('--batch_size', type=int, default=32,
+                        help='Batch size for training (default: 8)')
     parser.add_argument('--gradient_accumulation_steps', type=int, default=2,
-                        help='Number of gradient accumulation steps (default: 1)')
+                        help='Number of gradient accumulation steps (default: 4)')
     parser.add_argument('--epochs', type=int, default=100,
                         help='Number of epochs to train (default: 100)')
     parser.add_argument('--lr', type=float, default=2e-4,
@@ -87,26 +85,17 @@ def parse_args():
     parser.add_argument('--label_smoothing', type=float, default=0.1,
                         help='Label smoothing factor (default: 0.1)')
     
-    # H100 optimizations
-    parser.add_argument('--precision', type=str, default='bf16', 
-                        choices=['fp32', 'fp16', 'bf16'],
-                        help='Training precision (default: bf16)')
-    parser.add_argument('--gradient_checkpointing', action='store_true',
-                        help='Enable gradient checkpointing to save memory')
-    parser.add_argument('--compile', action='store_true',
-                        help='Use torch.compile() for faster training')
-    
     # Model configuration
-    parser.add_argument('--d_model', type=int, default=1024,
-                        help='Transformer dimension (default: 1024)')
-    parser.add_argument('--nhead', type=int, default=16,
-                        help='Number of attention heads (default: 16)')
-    parser.add_argument('--num_encoder_layers', type=int, default=8,
-                        help='Number of encoder layers (default: 8)')
-    parser.add_argument('--num_decoder_layers', type=int, default=8,
-                        help='Number of decoder layers (default: 8)')
-    parser.add_argument('--dim_feedforward', type=int, default=4096,
-                        help='Feedforward dimension (default: 4096)')
+    parser.add_argument('--d_model', type=int, default=768,
+                        help='Transformer dimension (default: 768)')
+    parser.add_argument('--nhead', type=int, default=12,
+                        help='Number of attention heads (default: 12)')
+    parser.add_argument('--num_encoder_layers', type=int, default=6,
+                        help='Number of encoder layers (default: 6)')
+    parser.add_argument('--num_decoder_layers', type=int, default=6,
+                        help='Number of decoder layers (default: 6)')
+    parser.add_argument('--dim_feedforward', type=int, default=3072,
+                        help='Feedforward dimension (default: 3072)')
     parser.add_argument('--dropout', type=float, default=0.1,
                         help='Dropout rate (default: 0.1)')
     
@@ -121,17 +110,22 @@ def parse_args():
                         help='Gradient clipping value (default: 1.0)')
     parser.add_argument('--save_every', type=int, default=5,
                         help='Save checkpoint every N epochs (default: 5)')
+    parser.add_argument('--max_duration', type=float, default=30.0,
+                        help='Maximum duration of MIDI files in seconds (default: 30.0)')
     
     # Wandb configuration
     parser.add_argument('--project_name', type=str, default='savc',
-                        help='WandB project name (default: svac)')
+                        help='WandB project name (default: savc)')
     parser.add_argument('--run_name', type=str, default=None,
                         help='WandB run name (default: timestamp)')
     
-    args = parser.parse_args()
-    print(f"Parsed args: {vars(args)}") 
+    parser.add_argument('--max_seq_length', type=int, default=1024,  # Added max sequence length
+                       help='Maximum sequence length (default: 512)')
     
-    return parser.parse_args()
+    args = parser.parse_args()
+    print(f"Parsed args: {vars(args)}")
+    
+    return args
 
 def setup_logging(save_dir):
     logging.basicConfig(
@@ -145,73 +139,61 @@ def setup_logging(save_dir):
     return logging.getLogger(__name__)
 
 def create_model(args):
-    tokenizer = MIDITokenizer()
+    from transformers import AutoConfig
+
+    # Configure ViT to be more memory efficient
+    vit_config = AutoConfig.from_pretrained(
+        "google/vit-large-patch16-384",
+        output_attentions=False,
+        output_hidden_states=False,
+        output_scores=False,
+        return_dict=False
+    )
+
+    tokenizer = MIDITokenizer(max_duration=args.max_duration)
     model = MusicGenerationTransformer(
         vit_name="google/vit-large-patch16-384",
+        vit_config=vit_config,  # Pass the config
         d_model=args.d_model,
         nhead=args.nhead,
         num_encoder_layers=args.num_encoder_layers,
         num_decoder_layers=args.num_decoder_layers,
         dim_feedforward=args.dim_feedforward,
         dropout=args.dropout,
-        max_seq_length=1024,
+        max_seq_length=args.max_seq_length,  # Make sure this matches
         tokenizer=tokenizer,
         label_smoothing=args.label_smoothing
     )
-    
-    if args.gradient_checkpointing:
-        model.gradient_checkpointing_enable()
-    
-    if args.compile:
-        model = torch.compile(model)
-    
+
+    # Enable gradient checkpointing only for the Vision Transformer if needed
+    if hasattr(model.vit, "gradient_checkpointing_enable"):
+        model.vit.gradient_checkpointing_enable()
+
     return model
 
 def scheduled_teacher_forcing(epoch, min_ratio=0.2, max_ratio=1.0, num_epochs=100):
-    """Calculate teacher forcing ratio based on training progress.
-    
-    Args:
-        epoch (int): Current training epoch
-        min_ratio (float): Minimum teacher forcing ratio (default: 0.2)
-        max_ratio (float): Maximum teacher forcing ratio (default: 1.0)
-        num_epochs (int): Total number of training epochs (default: 100)
-    
-    Returns:
-        float: Teacher forcing ratio for current epoch
-    """
+    """Calculate teacher forcing ratio based on training progress."""
     ratio = max_ratio - (max_ratio - min_ratio) * (epoch / num_epochs)
     return max(min_ratio, ratio)
 
 def get_lr_scheduler(optimizer, args, total_steps):
-    """Creates a learning rate scheduler with linear warmup and cosine decay.
-    
-    Args:
-        optimizer: The optimizer to schedule
-        args: Training arguments containing warmup_steps and min_lr
-        total_steps: Total number of training steps
-    
-    Returns:
-        torch.optim.lr_scheduler: Learning rate scheduler
-    """
-    from torch.optim.lr_scheduler import LambdaLR
-    
+    """Creates a learning rate scheduler with linear warmup and cosine decay."""
     def lr_lambda(current_step):
-        # Warmup phase
         if current_step < args.warmup_steps:
             return float(current_step) / float(max(1, args.warmup_steps))
         
-        # Cosine decay with minimum learning rate
         progress = float(current_step - args.warmup_steps) / float(max(1, total_steps - args.warmup_steps))
         cosine_decay = 0.5 * (1 + math.cos(math.pi * progress))
-        
-        # Scale between 1.0 and minimum learning rate
         return max(args.min_lr / args.lr, cosine_decay)
     
-    return LambdaLR(optimizer, lr_lambda)
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
-def train_one_batch(model, batch, optimizer, scheduler, criterion, device, epoch, args, accumulating=True):
-    images = batch['image'].to(device, non_blocking=True)
-    tokens = batch['tokens'].to(device, non_blocking=True)
+def train_one_batch(model, batch, optimizer, scheduler, criterion, accelerator, epoch, args, accumulating=True):
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    
+    images = batch['image']
+    tokens = batch['tokens']
     
     teacher_ratio = scheduled_teacher_forcing(
         epoch,
@@ -220,36 +202,40 @@ def train_one_batch(model, batch, optimizer, scheduler, criterion, device, epoch
         num_epochs=args.epochs
     )
     
-    outputs = model(images, tokens, teacher_forcing_ratio=teacher_ratio)
-    shift_logits = outputs[..., :-1, :].contiguous()
-    shift_labels = tokens[..., 1:].contiguous()
-    loss = criterion(
-        shift_logits.view(-1, shift_logits.size(-1)),
-        shift_labels.view(-1)
-    )
+    with accelerator.autocast():
+        outputs = model(images, tokens, teacher_forcing_ratio=teacher_ratio)
+        shift_logits = outputs[..., :-1, :].contiguous()
+        shift_labels = tokens[..., 1:].contiguous()
+        
+        loss = criterion(
+            shift_logits.view(-1, shift_logits.size(-1)),
+            shift_labels.view(-1)
+        )
     
     if accumulating:
         loss = loss / args.gradient_accumulation_steps
     
-    loss.backward()
+    accelerator.backward(loss)
     
     if not accumulating:
-        torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+        accelerator.clip_grad_norm_(model.parameters(), args.grad_clip)
         optimizer.step()
-        optimizer.zero_grad(set_to_none=True)
         scheduler.step()
+        optimizer.zero_grad()
+        torch.cuda.empty_cache()
     
     return loss.item() * (args.gradient_accumulation_steps if accumulating else 1)
 
-def validate(model, val_loader, criterion, device, args):
+
+def validate(model, val_loader, criterion, accelerator):
     model.eval()
     total_loss = 0
     num_batches = 0
     
     with torch.no_grad():
         for batch in val_loader:
-            images = batch['image'].to(device, non_blocking=True)
-            tokens = batch['tokens'].to(device, non_blocking=True)
+            images = batch['image']
+            tokens = batch['tokens']
             
             outputs = model(images, tokens)
             shift_logits = outputs[..., :-1, :].contiguous()
@@ -265,6 +251,12 @@ def validate(model, val_loader, criterion, device, args):
     return total_loss / num_batches
 
 def train(args):
+    # Memory management setup
+    torch.cuda.empty_cache()
+    gc.collect()
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512,expandable_segments:True'
+    accelerator = Accelerator()
+    
     # Setup
     if not hasattr(args, 'run_name') or args.run_name is None:
         args.run_name = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -273,20 +265,27 @@ def train(args):
     save_dir.mkdir(parents=True, exist_ok=True)
     logger = setup_logging(save_dir)
     
-    wandb.init(
-        project=args.project_name,
-        name=args.run_name,
-        config=vars(args)
-    )
-    
-    # Device setup
-    device = torch.device('cuda')
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.benchmark = True
+    if accelerator.is_main_process:
+        wandb.init(
+            project=args.project_name,
+            name=args.run_name,
+            config=vars(args)
+        )
     
     # Data loading
-    train_dataset = get_dataset(args.data_dir, split='train')
-    val_dataset = get_dataset(args.data_dir, split='val')
+     # Data loading
+    train_dataset = get_dataset(
+        args.data_dir, 
+        split='train',
+        max_duration=args.max_duration,
+        max_seq_length=args.max_seq_length  # Make sure this is passed
+    )
+    val_dataset = get_dataset(
+        args.data_dir, 
+        split='val',
+        max_duration=args.max_duration,
+        max_seq_length=args.max_seq_length  # Make sure this is passed
+    )
     
     train_loader = DataLoader(
         train_dataset,
@@ -309,10 +308,6 @@ def train(args):
     
     # Model setup
     model = create_model(args)
-    model = model.to(device)
-    
-    wandb.watch(model, log_freq=100)
-    
     criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
     optimizer = optim.AdamW(
         model.parameters(),
@@ -323,18 +318,26 @@ def train(args):
     
     total_steps = len(train_loader) * args.epochs
     scheduler = get_lr_scheduler(optimizer, args, total_steps)
+    
+    # Prepare for distributed training
+    model, optimizer, train_loader, val_loader, scheduler = accelerator.prepare(
+        model, optimizer, train_loader, val_loader, scheduler
+    )
+    
+    if accelerator.is_main_process:
+        wandb.watch(model, log_freq=100)
+    
     early_stopping = EarlyStopping(patience=args.patience)
     gradient_flow = GradientFlow(model)
-    
-    # Training loop
     best_val_loss = float('inf')
     
+    # Training loop
     for epoch in range(args.epochs):
         model.train()
         train_losses = []
         
-        with tqdm(train_loader, desc=f'Epoch {epoch} - Train') as train_pbar:
-            optimizer.zero_grad(set_to_none=True)
+        with tqdm(train_loader, desc=f'Epoch {epoch} - Train', disable=not accelerator.is_main_process) as train_pbar:
+            optimizer.zero_grad()
             
             for batch_idx, batch in enumerate(train_pbar):
                 is_accumulating = (batch_idx + 1) % args.gradient_accumulation_steps != 0
@@ -345,7 +348,7 @@ def train(args):
                     optimizer=optimizer,
                     scheduler=scheduler,
                     criterion=criterion,
-                    device=device,
+                    accelerator=accelerator,
                     epoch=epoch,
                     args=args,
                     accumulating=is_accumulating
@@ -353,7 +356,7 @@ def train(args):
                 
                 train_losses.append(loss)
                 
-                if not is_accumulating:
+                if not is_accumulating and accelerator.is_main_process:
                     grad_metrics = gradient_flow.log_gradients()
                     wandb.log({
                         'train/loss': loss,
@@ -368,48 +371,35 @@ def train(args):
                 })
         
         # Validation
-        val_loss = validate(model, val_loader, criterion, device, args)
+        val_loss = validate(model, val_loader, criterion, accelerator)
         
         # Logging
         train_loss = np.mean(train_losses)
         logger.info(f'Epoch {epoch}: Train Loss = {train_loss:.4f}, Val Loss = {val_loss:.4f}')
         
-        wandb.log({
-            'epoch': epoch,
-            'train/epoch_loss': train_loss,
-            'val/epoch_loss': val_loss,
-        })
-        
-        # Model saving
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            torch.save({
+        if accelerator.is_main_process:
+            wandb.log({
                 'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(),
-                'val_loss': val_loss,
-                'args': args
-            }, save_dir / 'best_model.pt')
+                'train/epoch_loss': train_loss,
+                'val/epoch_loss': val_loss,
+            })
             
-            wandb.log({'val/best_loss': best_val_loss})
-        
-        if (epoch + 1) % args.save_every == 0:
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(),
-                'val_loss': val_loss,
-                'args': args
-            }, save_dir / f'checkpoint_epoch_{epoch}.pt')
+            # Model saving
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                accelerator.save_state(save_dir / 'best_model.pt')
+                wandb.log({'val/best_loss': best_val_loss})
+            
+            if (epoch + 1) % args.save_every == 0:
+                accelerator.save_state(save_dir / f'checkpoint_epoch_{epoch}.pt')
         
         # Early stopping check
         if early_stopping(val_loss):
             logger.info(f'Early stopping triggered after epoch {epoch}')
             break
     
-    wandb.finish()
+    if accelerator.is_main_process:
+        wandb.finish()
 
 if __name__ == "__main__":
     args = parse_args()

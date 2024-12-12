@@ -1,0 +1,15 @@
+Metadata-Version: 2.1
+Name: savc
+Version: 0.1
+Summary: Style-Aware Visual Composer
+Author: Vincent
+Requires-Python: >=3.8
+Requires-Dist: torch
+Requires-Dist: torchvision
+Requires-Dist: transformers
+Requires-Dist: pretty_midi
+Requires-Dist: pillow
+Requires-Dist: tqdm
+Requires-Dist: wandb
+Requires-Dist: numpy
+Requires-Dist: accelerate
