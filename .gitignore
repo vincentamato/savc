@@ -10,3 +10,4 @@ wandb
 *.tar.gz
 *.zip
 *.txt
+*.log
