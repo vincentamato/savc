@@ -3,129 +3,154 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 import wandb
 import argparse
 from datetime import datetime
 import numpy as np
-import math
-import sys
 import logging
+import sys
 from accelerate import Accelerator
 import gc
+import math
 
-from src.models.model import MusicGenerationTransformer
+from src.models.music_transformer import MusicTransformer
 from src.data.dataset import get_dataset, MIDITokenizer
+from src.losses.music_generation_loss import MusicGenerationLoss
+
+
+class DynamicLossWeighter:
+    def __init__(self, initial_weights, decay_factor=0.95, min_weight=0.1):
+        self.weights = initial_weights
+        self.decay_factor = decay_factor
+        self.min_weight = min_weight
+        self.moving_averages = {k: 0.0 for k in initial_weights}
+        
+    def update(self, loss_dict):
+        # Update moving averages
+        for k, v in loss_dict.items():
+            if k in self.moving_averages:
+                self.moving_averages[k] = self.moving_averages[k] * self.decay_factor + v * (1 - self.decay_factor)
+        
+        # Calculate relative magnitudes
+        max_loss = max(self.moving_averages.values())
+        if max_loss > 0:
+            for k in self.weights:
+                relative_magnitude = self.moving_averages[k] / max_loss
+                # Increase weight for smaller losses, decrease for larger ones
+                self.weights[k] = max(
+                    self.min_weight,
+                    self.weights[k] * (2.0 - relative_magnitude)
+                )
+        
+        # Normalize weights
+        total = sum(self.weights.values())
+        if total > 0:
+            self.weights = {k: v/total for k, v in self.weights.items()}
+        
+        return self.weights
 
 class EarlyStopping:
-    def __init__(self, patience=10, min_delta=0.0001, mode='min'):
+    def __init__(self, patience=10, min_delta=0.0001):
         self.patience = patience
         self.min_delta = min_delta
-        self.mode = mode
         self.counter = 0
-        self.best_loss = None
+        self.best_loss = float('inf')
         self.early_stop = False
-        self.min_validation_loss = float('inf') if mode == 'min' else float('-inf')
-    
-    def __call__(self, validation_loss):
-        if self.mode == 'min':
-            if validation_loss < self.min_validation_loss - self.min_delta:
-                self.min_validation_loss = validation_loss
-                self.counter = 0
-            else:
-                self.counter += 1
+        
+    def __call__(self, val_loss):
+        if val_loss < self.best_loss - self.min_delta:
+            self.best_loss = val_loss
+            self.counter = 0
         else:
-            if validation_loss > self.min_validation_loss + self.min_delta:
-                self.min_validation_loss = validation_loss
-                self.counter = 0
-            else:
-                self.counter += 1
-                
-        if self.counter >= self.patience:
-            self.early_stop = True
-            
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.early_stop = True
         return self.early_stop
 
-class GradientFlow:
-    def __init__(self, model):
-        self.model = model
-        self.gradients = {}
-        
-    def log_gradients(self):
-        for name, param in self.model.named_parameters():
-            if param.requires_grad and param.grad is not None:
-                self.gradients[f"gradients/{name}"] = {
-                    'mean': param.grad.abs().mean().item(),
-                    'std': param.grad.std().item(),
-                    'max': param.grad.abs().max().item()
-                }
-        return self.gradients
-
 def parse_args():
-    parser = argparse.ArgumentParser(description='Music Generation Training Script')
-    
-    # Training hyperparameters
-    parser.add_argument('--batch_size', type=int, default=32,
-                       help='Batch size for training')
-    parser.add_argument('--gradient_accumulation_steps', type=int, default=4,
-                       help='Number of gradient accumulation steps')
-    parser.add_argument('--epochs', type=int, default=100,
-                       help='Number of epochs to train')
-    parser.add_argument('--lr', type=float, default=5e-4,
-                       help='Learning rate')
-    parser.add_argument('--min_lr', type=float, default=1e-5,
-                       help='Minimum learning rate')
-    parser.add_argument('--weight_decay', type=float, default=0.01,
-                       help='Weight decay for AdamW')
-    parser.add_argument('--warmup_steps', type=int, default=100,
-                       help='Number of warmup steps for learning rate scheduler')
-    parser.add_argument('--patience', type=int, default=10,
-                       help='Patience for early stopping')
-    parser.add_argument('--label_smoothing', type=float, default=0.1,
-                       help='Label smoothing factor')
+    parser = argparse.ArgumentParser(description='Train Art-to-Music Generation Model')
     
     # Model configuration
+    parser.add_argument('--vit_model', type=str, default="google/vit-base-patch16-384",
+                       help='ViT model name from HuggingFace')
     parser.add_argument('--d_model', type=int, default=1024,
-                       help='Transformer dimension')
+                       help='Model dimension')
     parser.add_argument('--nhead', type=int, default=16,
                        help='Number of attention heads')
-    parser.add_argument('--num_encoder_layers', type=int, default=8,
-                       help='Number of encoder layers')
-    parser.add_argument('--num_decoder_layers', type=int, default=8,
+    parser.add_argument('--num_decoder_layers', type=int, default=16,  # Increased from 8
                        help='Number of decoder layers')
-    parser.add_argument('--dim_feedforward', type=int, default=4096,  # Changed from 3072
+    parser.add_argument('--dim_feedforward', type=int, default=4096,
                        help='Feedforward dimension')
-    parser.add_argument('--dropout', type=float, default=0.15,
+    parser.add_argument('--dropout', type=float, default=0.15,  # Slightly increased
                        help='Dropout rate')
-    parser.add_argument('--max_seq_length', type=int, default=1024,  # Changed from 1024
+    parser.add_argument('--max_seq_length', type=int, default=1024,  # Increased for longer sequences
                        help='Maximum sequence length')
     
-    # System parameters
-    parser.add_argument('--data_dir', type=str, required=True,
-                       help='Directory containing the dataset')
-    parser.add_argument('--save_dir', type=str, required=True,
-                       help='Directory to save checkpoints')
-    parser.add_argument('--num_workers', type=int, default=8,
-                       help='Number of data loading workers')
+    # Training hyperparameters
+    parser.add_argument('--batch_size', type=int, default=16,  # Adjusted for stability
+                       help='Batch size')
+    parser.add_argument('--gradient_accumulation_steps', type=int, default=20,  # Increased
+                       help='Gradient accumulation steps')
+    parser.add_argument('--epochs', type=int, default=150,  # Increased for better convergence
+                       help='Number of epochs')
+    parser.add_argument('--lr', type=float, default=1e-4,  # Reduced from 1e-4
+                   help='Learning rate')
+    parser.add_argument('--min_lr', type=float, default=1e-6,  # Adjusted
+                    help='Minimum learning rate')
+    parser.add_argument('--warmup_steps', type=int, default=0,  # Reduced from 4000
+                    help='Warmup steps')
+    parser.add_argument('--weight_decay', type=float, default=0.02,  # Increased
+                       help='Weight decay')
+    parser.add_argument('--label_smoothing', type=float, default=0.15,
+                       help='Label smoothing factor')
     parser.add_argument('--grad_clip', type=float, default=1.0,
-                       help='Gradient clipping value')
+                       help='Gradient clipping')
+    
+    # Add new loss weighting arguments
+    parser.add_argument('--token_loss_weight', type=float, default=1.0,
+                       help='Weight for token prediction loss')
+    parser.add_argument('--harmony_loss_weight', type=float, default=0.3,
+                       help='Weight for harmony loss')
+    parser.add_argument('--rhythm_loss_weight', type=float, default=0.3,
+                       help='Weight for rhythm loss')
+    parser.add_argument('--contour_loss_weight', type=float, default=0.2,
+                       help='Weight for melodic contour loss')
+    
+    # Add dynamic weighting arguments
+    parser.add_argument('--use_dynamic_weighting', type=bool, default=True,
+                       help='Use dynamic loss weighting')
+    parser.add_argument('--weight_decay_factor', type=float, default=0.95,
+                       help='Decay factor for loss weights')
+    
+    # Logging and evaluation
+    parser.add_argument('--log_every', type=int, default=10,
+                       help='Log every N batches')
+    parser.add_argument('--eval_every', type=int, default=500,
+                       help='Evaluate every N steps')
     parser.add_argument('--save_every', type=int, default=5,
-                       help='Save checkpoint every N epochs')
-    parser.add_argument('--max_duration', type=float, default=30.0,
-                       help='Maximum duration of MIDI files in seconds')
+                       help='Save every N epochs')
     
-    # Wandb configuration
-    parser.add_argument('--project_name', type=str, default='savc',
+    # System and optimization
+    parser.add_argument('--mixed_precision', type=str, default='fp16',
+                       help='Mixed precision mode')
+    parser.add_argument('--gradient_checkpointing', type=bool, default=True,
+                   help='Enable gradient checkpointing')
+    
+    parser.add_argument('--data_dir', type=str, required=True,
+                       help='Data directory')
+    parser.add_argument('--save_dir', type=str, default='checkpoints',
+                       help='Save directory')
+    parser.add_argument('--project_name', type=str, default='art-to-music',
                        help='WandB project name')
-    parser.add_argument('--run_name', type=str, default=None,
-                       help='WandB run name')
+    parser.add_argument('--num_workers', type=int, default=8,
+                       help='Number of workers')
+    parser.add_argument('--max_duration', type=float, default=30.0,
+                       help='Maximum MIDI duration in seconds')
     
-    args = parser.parse_args()
-    print(f"Parsed args: {vars(args)}")
+    return parser.parse_args()
     
-    return args
-
 def setup_logging(save_dir):
     logging.basicConfig(
         level=logging.INFO,
@@ -137,307 +162,585 @@ def setup_logging(save_dir):
     )
     return logging.getLogger(__name__)
 
-def create_model(args):
-    from transformers import AutoConfig
+def create_optimizer_and_scheduler(model, num_training_steps, args):
+    """Create optimizer with improved warmup scheduling"""
+    # Separate parameter groups for different learning rates
+    no_decay = ['bias', 'LayerNorm.weight', 'layer_norm.weight']
+    optimizer_grouped_parameters = [
+        {
+            'params': [p for n, p in model.named_parameters() 
+                      if not any(nd in n for nd in no_decay) and 'vit' not in n],
+            'weight_decay': args.weight_decay,
+            'lr': args.lr
+        },
+        {
+            'params': [p for n, p in model.named_parameters() 
+                      if any(nd in n for nd in no_decay) and 'vit' not in n],
+            'weight_decay': 0.0,
+            'lr': args.lr
+        },
+        {
+            'params': [p for n, p in model.named_parameters() 
+                      if not any(nd in n for nd in no_decay) and 'vit' in n],
+            'weight_decay': args.weight_decay,
+            'lr': args.lr * 0.1  # Lower learning rate for ViT
+        },
+        {
+            'params': [p for n, p in model.named_parameters() 
+                      if any(nd in n for nd in no_decay) and 'vit' in n],
+            'weight_decay': 0.0,
+            'lr': args.lr * 0.1  # Lower learning rate for ViT
+        }
+    ]
+    
+    optimizer = torch.optim.AdamW(
+        optimizer_grouped_parameters,
+        lr=args.lr,
+        betas=(0.9, 0.95),
+        eps=1e-8
+    )
+    
+    # Add cosine schedule with gradual warmup
+    def lr_lambda(current_step):
+        if current_step < args.warmup_steps:
+            return float(current_step) / float(max(1, args.warmup_steps))
+        progress = float(current_step - args.warmup_steps) / float(max(1, num_training_steps - args.warmup_steps))
+        return max(args.min_lr / args.lr, 0.5 * (1.0 + math.cos(math.pi * progress)))
+    
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+    return optimizer, scheduler
 
-    # More aggressive memory optimization for ViT
-    vit_config = AutoConfig.from_pretrained(
-        "google/vit-large-patch16-384",
-        output_attentions=False,
-        output_hidden_states=False,
-        output_scores=False,
-        return_dict=False,
-        torchscript=True  # More memory efficient
+def setup_wandb_logging(args):
+    """Enhanced WandB configuration with comprehensive metrics"""
+    run = wandb.init(
+        project=args.project_name,
+        config={
+            "model_config": {
+                "vit_model": args.vit_model,
+                "d_model": args.d_model,
+                "nhead": args.nhead,
+                "num_decoder_layers": args.num_decoder_layers,
+                "dim_feedforward": args.dim_feedforward,
+                "dropout": args.dropout,
+                "max_seq_length": args.max_seq_length
+            },
+            "training_config": {
+                "batch_size": args.batch_size,
+                "gradient_accumulation_steps": args.gradient_accumulation_steps,
+                "epochs": args.epochs,
+                "lr": args.lr,
+                "min_lr": args.min_lr,
+                "weight_decay": args.weight_decay,
+                "warmup_steps": args.warmup_steps
+            },
+            "loss_config": {
+                "token_loss_weight": args.token_loss_weight,
+                "harmony_loss_weight": args.harmony_loss_weight,
+                "rhythm_loss_weight": args.rhythm_loss_weight,
+                "contour_loss_weight": args.contour_loss_weight,
+                "use_dynamic_weighting": args.use_dynamic_weighting,
+                "weight_decay_factor": args.weight_decay_factor
+            }
+        }
+    )
+    
+    # Define metric groupings
+    wandb.define_metric("train/*", step_metric="train/step")
+    wandb.define_metric("val/*", step_metric="val/step")
+    wandb.define_metric("epoch", summary="max")
+    wandb.define_metric("epoch_*", step_metric="epoch")
+    
+    return run
+
+def train_one_epoch(model, train_loader, optimizer, scheduler, criterion, accelerator, args, current_epoch, loss_weighter=None, logger=None):
+    model.train()
+    total_batches = len(train_loader)
+    
+    all_losses = {
+        'token_loss': 0.0,
+        'harmony_loss': 0.0,
+        'rhythm_loss': 0.0,
+        'contour_loss': 0.0,
+        'total_loss': 0.0
+    }
+    
+    progress_bar = tqdm(train_loader, desc=f"Epoch {current_epoch+1}/{args.epochs}")
+    
+    for batch_idx, batch in enumerate(progress_bar):
+        try:
+            with accelerator.autocast():
+                outputs = model(
+                    batch['image'],
+                    batch['tokens'],
+                    attention_mask=batch['attention_mask']
+                )
+
+                # Get loss dictionary from criterion
+                loss_dict = criterion(outputs, batch['tokens'], attention_mask=batch['attention_mask'])
+                
+                # Extract total loss
+                loss = loss_dict['total_loss']
+                
+                # Check for NaNs
+                for loss_name, loss_value in loss_dict.items():
+                    if torch.isnan(loss_value):
+                        logger.error(f"NaN detected in {loss_name} at batch {batch_idx} of epoch {current_epoch+1}")
+                        raise ValueError(f"NaN detected in {loss_name}")
+                
+                # Scale loss for gradient accumulation if needed
+                if args.gradient_accumulation_steps > 1:
+                    loss = loss / args.gradient_accumulation_steps
+            
+            # Backward pass
+            accelerator.backward(loss)
+            
+            if (batch_idx + 1) % args.gradient_accumulation_steps == 0:
+                if args.grad_clip > 0:
+                    accelerator.clip_grad_norm_(model.parameters(), args.grad_clip)
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad()
+            
+            # Update metrics
+            loss_value = loss.item() * (args.gradient_accumulation_steps if args.gradient_accumulation_steps > 1 else 1)
+            for k, v in loss_dict.items():
+                all_losses[k] += v.item()
+            
+            # Log progress on the progress bar
+            progress_bar.set_postfix({
+                'loss': f'{loss_value:.4f}',
+                'lr': f'{scheduler.get_last_lr()[0]:.2e}'
+            })
+            
+            # Detailed logging at every step
+            if accelerator.is_main_process:
+                global_step = batch_idx + total_batches * current_epoch
+                log_dict = {
+                    'train/step': global_step,
+                    'train/loss': loss_value,
+                    'train/learning_rate': scheduler.get_last_lr()[0]
+                }
+                
+                # Log individual losses
+                for k in loss_dict:
+                    log_dict[f'train/losses/{k}'] = loss_dict[k].item()
+                
+                wandb.log(log_dict, step=global_step)
+            
+        except RuntimeError as e:
+            if "out of memory" in str(e):
+                accelerator.print('OOM occurred, clearing cache and skipping batch')
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                continue
+            else:
+                raise e
+        except ValueError as ve:
+            accelerator.print(f"Training stopped due to NaN loss: {ve}")
+            return None  # Return None to indicate training should stop
+    
+    # Calculate averages
+    avg_metrics = {k: v / total_batches for k, v in all_losses.items()}
+    return avg_metrics
+
+
+def validate(model, val_loader, criterion, accelerator, args, current_epoch, loss_weighter=None, logger=None):
+    model.eval()
+    total_batches = len(val_loader)
+    
+    all_losses = {
+        'token_loss': 0.0,
+        'harmony_loss': 0.0,
+        'rhythm_loss': 0.0,
+        'contour_loss': 0.0,
+        'total_loss': 0.0
+    }
+    
+    with torch.no_grad():
+        progress_bar = tqdm(val_loader, desc=f"Validation Epoch {current_epoch+1}/{args.epochs}")
+        
+        for batch_idx, batch in enumerate(progress_bar):
+            outputs = model(
+                batch['image'],
+                batch['tokens'],
+                attention_mask=batch['attention_mask']
+            )
+            
+            # Get individual losses (tensors)
+            loss_dict = criterion(
+                outputs,
+                batch['tokens'],
+                attention_mask=batch['attention_mask']
+            )
+            
+            # Check for NaNs in loss components
+            for loss_name, loss_value in loss_dict.items():
+                if torch.isnan(loss_value):
+                    logger.error(f"NaN detected in {loss_name} at batch {batch_idx} of epoch {current_epoch+1}")
+                    raise ValueError(f"NaN detected in {loss_name}")
+            
+            # Use total_loss directly
+            loss = loss_dict['total_loss']
+            
+            # Update totals
+            for k, v in loss_dict.items():
+                all_losses[k] += v.item()
+            
+            # Log validation step metrics at every step
+            if accelerator.is_main_process:
+                global_step = batch_idx + total_batches * current_epoch
+                log_dict = {
+                    'val/step': global_step,
+                    'val/step_loss': loss.item(),
+                }
+                
+                # Log individual validation losses
+                for k, v in loss_dict.items():
+                    log_dict[f'val/step_losses/{k}'] = v.item()
+                
+                wandb.log(log_dict, step=global_step)
+            
+            progress_bar.set_postfix({'val_loss': f'{loss.item():.4f}'})
+    
+    # Calculate averages
+    avg_metrics = {k: v / total_batches for k, v in all_losses.items()}
+    return avg_metrics
+
+def setup_wandb_logging(args):
+    """Enhanced WandB configuration with comprehensive metrics"""
+    run = wandb.init(
+        project=args.project_name,
+        config={
+            "model_config": {
+                "vit_model": args.vit_model,
+                "d_model": args.d_model,
+                "nhead": args.nhead,
+                "num_decoder_layers": args.num_decoder_layers,
+                "dim_feedforward": args.dim_feedforward,
+                "dropout": args.dropout,
+                "max_seq_length": args.max_seq_length
+            },
+            "training_config": {
+                "batch_size": args.batch_size,
+                "gradient_accumulation_steps": args.gradient_accumulation_steps,
+                "epochs": args.epochs,
+                "lr": args.lr,
+                "min_lr": args.min_lr,
+                "weight_decay": args.weight_decay,
+                "warmup_steps": args.warmup_steps
+            },
+            "loss_config": {
+                "token_loss_weight": args.token_loss_weight,
+                "harmony_loss_weight": args.harmony_loss_weight,
+                "rhythm_loss_weight": args.rhythm_loss_weight,
+                "contour_loss_weight": args.contour_loss_weight,
+                "use_dynamic_weighting": args.use_dynamic_weighting,
+                "weight_decay_factor": args.weight_decay_factor
+            }
+        }
+    )
+    
+    # Define metric groupings
+    wandb.define_metric("train/*", step_metric="train/step")
+    wandb.define_metric("val/*", step_metric="val/step")
+    wandb.define_metric("epoch", summary="max")
+    wandb.define_metric("epoch_*", step_metric="epoch")
+    
+    return run
+
+def create_datasets(args, logger):
+    """Create training and validation datasets with proper error handling"""
+    logger.info("Initializing datasets...")
+    
+    # Setup tokenizer parameters
+    tokenizer_params = {
+        'max_notes': 128,
+        'max_velocity': 32,
+        'time_step': 0.125,
+        'max_time_shift': 100,
+        'max_duration': args.max_duration,
+        'special_tokens': {
+            'PAD': 0,
+            'BOS': 1,
+            'EOS': 2
+        }
+    }
+    
+    try:
+        # Create training dataset
+        logger.info("Creating training dataset...")
+        train_dataset = get_dataset(
+            base_dir=args.data_dir,
+            split='train',
+            num_workers=args.num_workers,
+            tokenizer_params=tokenizer_params,
+            max_seq_length=args.max_seq_length,
+            vit_model_name=args.vit_model,
+            max_duration=args.max_duration
+        )
+        logger.info(f"Training dataset size: {len(train_dataset)}")
+        
+        # Create validation dataset
+        logger.info("Creating validation dataset...")
+        val_dataset = get_dataset(
+            base_dir=args.data_dir,
+            split='val',
+            num_workers=args.num_workers,
+            tokenizer_params=tokenizer_params,
+            max_seq_length=args.max_seq_length,
+            vit_model_name=args.vit_model,
+            max_duration=args.max_duration
+        )
+        logger.info(f"Validation dataset size: {len(val_dataset)}")
+        
+        return train_dataset, val_dataset
+        
+    except Exception as e:
+        logger.error(f"Error creating datasets: {str(e)}")
+        raise
+
+
+def create_dataloader(
+    dataset: Dataset,
+    batch_size: int,
+    shuffle: bool,
+    num_workers: int,
+    drop_last: bool,
+    pin_memory: bool = True
+) -> DataLoader:
+    """Create DataLoader with proper settings for training/validation."""
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=True if num_workers > 0 else False,
+        prefetch_factor=2 if num_workers > 0 else None,
+        drop_last=drop_last
     )
 
-    tokenizer = MIDITokenizer(max_duration=args.max_duration)
-    model = MusicGenerationTransformer(
-        vit_name="google/vit-large-patch16-384",
-        vit_config=vit_config,
+def create_tokenizer(args):
+    """Create and initialize tokenizer with given parameters"""
+    tokenizer_params = {
+        'max_notes': 128,
+        'max_velocity': 32,
+        'time_step': 0.125,
+        'max_time_shift': 100,
+        'max_duration': args.max_duration,
+        'special_tokens': {
+            'PAD': 0,
+            'BOS': 1,
+            'EOS': 2
+        }
+    }
+    
+    return MIDITokenizer(**tokenizer_params), tokenizer_params
+
+def main():
+    args = parse_args()
+    
+    # Initialize accelerator
+    accelerator = Accelerator(
+        mixed_precision=args.mixed_precision,
+        gradient_accumulation_steps=args.gradient_accumulation_steps
+    )
+    
+    # Setup directories
+    save_dir = Path(args.save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize wandb if main process
+    if accelerator.is_main_process:
+        wandb_run = setup_wandb_logging(args)
+        args.save_dir = str(save_dir / wandb_run.name)
+        os.makedirs(args.save_dir, exist_ok=True)
+    
+    logger = setup_logging(Path(args.save_dir))
+    logger.info(f"Starting training with arguments: {args}")
+    
+    # Create tokenizer first
+    tokenizer, tokenizer_params = create_tokenizer(args)
+    
+    # Calculate vocab size from tokenizer
+    vocab_size = (
+        len(tokenizer.special_tokens) +  # Special tokens
+        2 * tokenizer.max_notes +        # Note on/off
+        tokenizer.max_velocity +         # Velocity
+        tokenizer.max_time_shift         # Time shift
+    )
+    logger.info(f"Vocabulary size: {vocab_size}")
+    
+    # Create datasets
+    try:
+        # Create training dataset
+        logger.info("Creating training dataset...")
+        train_dataset, val_dataset = create_datasets(args, logger)
+        
+    except Exception as e:
+        logger.error(f"Error creating datasets: {str(e)}")
+        raise
+    
+    # Create dataloaders
+    train_loader = create_dataloader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.num_workers,
+        drop_last=True
+    )
+    
+    val_loader = create_dataloader(
+        val_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        drop_last=False
+    )
+    
+    # Create model
+    model = MusicTransformer(
+        vocab_size=vocab_size,
         d_model=args.d_model,
         nhead=args.nhead,
-        num_encoder_layers=args.num_encoder_layers,
         num_decoder_layers=args.num_decoder_layers,
         dim_feedforward=args.dim_feedforward,
         dropout=args.dropout,
         max_seq_length=args.max_seq_length,
         tokenizer=tokenizer,
-        label_smoothing=args.label_smoothing,
-        min_teacher_forcing=0.3,
-        temperature=1.0
+        vit_model=args.vit_model,
+        freeze_vit=True
     )
-
-    # Enable gradient checkpointing everywhere
-    if hasattr(model.vit, "gradient_checkpointing_enable"):
-        model.vit.gradient_checkpointing_enable()
-    for module in [model.transformer.encoder, model.transformer.decoder]:
-        module.gradient_checkpointing = True
-
-    return model
-
-def scheduled_teacher_forcing(epoch, min_ratio=0.2, max_ratio=1.0, num_epochs=100):
-    """Calculate teacher forcing ratio based on training progress."""
-    ratio = max_ratio - (max_ratio - min_ratio) * (epoch / num_epochs)
-    return max(min_ratio, ratio)
-
-def get_lr_scheduler(optimizer, args, total_steps):
-    """Creates a learning rate scheduler with faster warmup and cosine decay with restarts."""
-    def lr_lambda(current_step):
-        if current_step < args.warmup_steps:
-            return float(current_step) / float(max(1, args.warmup_steps))
-        
-        # More aggressive restarts
-        restart_every = 500  # More frequent restarts
-        num_restarts = (current_step - args.warmup_steps) // restart_every
-        restart_progress = (current_step - args.warmup_steps - num_restarts * restart_every) / restart_every
-        
-        # Higher amplitude cycles
-        cosine = 0.5 * (1 + math.cos(math.pi * restart_progress))
-        restart_amplitude = 0.7 ** num_restarts  # Less decay in amplitude
-        
-        return max(args.min_lr / args.lr, cosine * restart_amplitude + (1 - restart_amplitude))
-
-    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-
-def train_one_batch(model, batch, optimizer, scheduler, criterion, accelerator, epoch, args, accumulating=True):
-    try:
-        # Explicitly clear cache at start of batch
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        
-        images = batch['image']
-        tokens = batch['tokens']
-        
-        model.train()
-        optimizer.zero_grad()
-        
-        teacher_ratio = scheduled_teacher_forcing(
-            epoch,
-            min_ratio=0.3,
-            max_ratio=1.0,
-            num_epochs=args.epochs
-        )
-        
-        with accelerator.autocast():
-            # Split batch processing if needed
-            if images.size(0) > 8:  # Process in chunks if batch is large
-                outputs = []
-                for i in range(0, images.size(0), 8):
-                    chunk_out = model(
-                        images[i:i+8], 
-                        target_sequences=tokens[i:i+8],
-                        teacher_forcing_ratio=teacher_ratio
-                    )
-                    outputs.append(chunk_out)
-                outputs = torch.cat(outputs, dim=0)
-            else:
-                outputs = model(images, target_sequences=tokens, teacher_forcing_ratio=teacher_ratio)
-            
-            shift_logits = outputs[..., :-1, :].contiguous()
-            shift_labels = tokens[..., 1:].contiguous()
-            
-            loss = criterion(
-                shift_logits.view(-1, shift_logits.size(-1)),
-                shift_labels.view(-1)
-            )
-        
-        if accumulating:
-            loss = loss / args.gradient_accumulation_steps
-        
-        accelerator.backward(loss)
-        
-        if not accumulating:
-            if args.grad_clip > 0:
-                accelerator.clip_grad_norm_(model.parameters(), args.grad_clip)
-            optimizer.step()
-            scheduler.step()
-            optimizer.zero_grad()
-            
-            # Force cuda cache clear
-            torch.cuda.empty_cache()
-        
-        return loss.item() * (args.gradient_accumulation_steps if accumulating else 1)
-        
-    except RuntimeError as e:
-        if "out of memory" in str(e) or "!block->expandable_segment_" in str(e):
-            torch.cuda.empty_cache()
-            raise RuntimeError("Memory error occurred. Try reducing batch size or sequence length.")
-        raise e
-
-def validate(model, val_loader, criterion, accelerator):
-    model.eval()
-    total_loss = 0
-    num_batches = 0
     
-    with torch.no_grad():
-        for batch in val_loader:
-            images = batch['image']
-            tokens = batch['tokens']
-            
-            outputs = model(images, tokens)
-            shift_logits = outputs[..., :-1, :].contiguous()
-            shift_labels = tokens[..., 1:].contiguous()
-            loss = criterion(
-                shift_logits.view(-1, shift_logits.size(-1)),
-                shift_labels.view(-1)
-            )
-            
-            total_loss += loss.item()
-            num_batches += 1
-            
-    return total_loss / num_batches
-
-def train(args):
-    # Memory management setup
-    torch.cuda.empty_cache()
-    gc.collect()
-    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512,expandable_segments:True'
-    accelerator = Accelerator()
+    if args.gradient_checkpointing:
+        model.gradient_checkpointing_enable()
+        logger.info("Gradient checkpointing enabled")
     
-    # Setup
-    if not hasattr(args, 'run_name') or args.run_name is None:
-        args.run_name = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Initialize newly added layers
+    def initialize_weights(module):
+        if isinstance(module, nn.Linear):
+            nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                nn.init.constant_(module.bias, 0)
     
-    save_dir = Path(args.save_dir) / args.run_name
-    save_dir.mkdir(parents=True, exist_ok=True)
-    logger = setup_logging(save_dir)
+    model.apply(initialize_weights)
     
-    if accelerator.is_main_process:
-        wandb.init(
-            project=args.project_name,
-            name=args.run_name,
-            config=vars(args)
+    # Calculate total steps for optimizer/scheduler
+    total_steps = len(train_loader) * args.epochs // args.gradient_accumulation_steps
+    
+    # Create optimizer and scheduler
+    optimizer, scheduler = create_optimizer_and_scheduler(model, total_steps, args)
+    
+    # Initialize loss weighter if using dynamic weighting
+    loss_weighter = None
+    if args.use_dynamic_weighting:
+        initial_weights = {
+            'token_loss': args.token_loss_weight,
+            'harmony_loss': args.harmony_loss_weight,
+            'rhythm_loss': args.rhythm_loss_weight,
+            'contour_loss': args.contour_loss_weight
+        }
+        loss_weighter = DynamicLossWeighter(
+            initial_weights,
+            decay_factor=args.weight_decay_factor
         )
     
-    # Data loading
-     # Data loading
-    train_dataset = get_dataset(
-        args.data_dir, 
-        split='train',
-        max_duration=args.max_duration,
-        max_seq_length=args.max_seq_length  # Make sure this is passed
+    # Initialize criterion
+    criterion = MusicGenerationLoss(
+        vocab_size=vocab_size,
+        pad_token_id=tokenizer.special_tokens['PAD']
     )
-    val_dataset = get_dataset(
-        args.data_dir, 
-        split='val',
-        max_duration=args.max_duration,
-        max_seq_length=args.max_seq_length  # Make sure this is passed
-    )
-    
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=args.num_workers,
-        pin_memory=True,
-        persistent_workers=True,
-        prefetch_factor=2
-    )
-    
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.num_workers,
-        pin_memory=True,
-        persistent_workers=True
-    )
-    
-    # Model setup
-    model = create_model(args)
-    criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
-    optimizer = optim.AdamW(
-        model.parameters(),
-        lr=args.lr,
-        weight_decay=args.weight_decay,
-        betas=(0.9, 0.95)
-    )
-    
-    total_steps = len(train_loader) * args.epochs
-    scheduler = get_lr_scheduler(optimizer, args, total_steps)
     
     # Prepare for distributed training
-    model, optimizer, train_loader, val_loader, scheduler = accelerator.prepare(
-        model, optimizer, train_loader, val_loader, scheduler
+    model, optimizer, train_loader, val_loader, scheduler, criterion = accelerator.prepare(
+        model, optimizer, train_loader, val_loader, scheduler, criterion
     )
     
-    if accelerator.is_main_process:
-        wandb.watch(model, log_freq=100)
-    
-    early_stopping = EarlyStopping(patience=args.patience)
-    gradient_flow = GradientFlow(model)
+    # Training loop
+    early_stopping = EarlyStopping(patience=10, min_delta=0.0001)
     best_val_loss = float('inf')
     
-    # Training loop
+    logger.info("Starting training loop")
+    
     for epoch in range(args.epochs):
-        model.train()
-        train_losses = []
+        logger.info(f"Starting epoch {epoch+1}/{args.epochs}")
         
-        with tqdm(train_loader, desc=f'Epoch {epoch} - Train', disable=not accelerator.is_main_process) as train_pbar:
-            optimizer.zero_grad()
-            
-            for batch_idx, batch in enumerate(train_pbar):
-                is_accumulating = (batch_idx + 1) % args.gradient_accumulation_steps != 0
-                
-                loss = train_one_batch(
-                    model=model,
-                    batch=batch,
-                    optimizer=optimizer,
-                    scheduler=scheduler,
-                    criterion=criterion,
-                    accelerator=accelerator,
-                    epoch=epoch,
-                    args=args,
-                    accumulating=is_accumulating
-                )
-                
-                train_losses.append(loss)
-                
-                if not is_accumulating and accelerator.is_main_process:
-                    grad_metrics = gradient_flow.log_gradients()
-                    wandb.log({
-                        'train/loss': loss,
-                        'train/learning_rate': scheduler.get_last_lr()[0],
-                        'train/epoch': epoch + batch_idx / len(train_loader),
-                        **grad_metrics
-                    })
-                
-                train_pbar.set_postfix({
-                    'loss': f'{loss:.4f}',
-                    'lr': f'{scheduler.get_last_lr()[0]:.2e}'
-                })
+        # Training
+        train_metrics = train_one_epoch(
+            model=model,
+            train_loader=train_loader,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            criterion=criterion,
+            accelerator=accelerator,
+            args=args,
+            current_epoch=epoch,
+            loss_weighter=loss_weighter,
+            logger=logger  # Pass logger here
+        )
         
         # Validation
-        val_loss = validate(model, val_loader, criterion, accelerator)
+        val_metrics = validate(
+            model=model,
+            val_loader=val_loader,
+            criterion=criterion,
+            accelerator=accelerator,
+            args=args,
+            current_epoch=epoch,
+            loss_weighter=loss_weighter,
+            logger=logger  # And here
+        )
         
-        # Logging
-        train_loss = np.mean(train_losses)
-        logger.info(f'Epoch {epoch}: Train Loss = {train_loss:.4f}, Val Loss = {val_loss:.4f}')
-        
+        # Log metrics
         if accelerator.is_main_process:
             wandb.log({
-                'epoch': epoch,
-                'train/epoch_loss': train_loss,
-                'val/epoch_loss': val_loss,
+                'epoch': epoch + 1,
+                'train/loss': train_metrics['loss'],
+                'train/token_loss': train_metrics['token_loss'],
+                'train/harmony_loss': train_metrics['harmony_loss'],
+                'train/rhythm_loss': train_metrics['rhythm_loss'],
+                'train/contour_loss': train_metrics['contour_loss'],
+                'val/loss': val_metrics['loss'],
+                'val/token_loss': val_metrics['token_loss'],
+                'val/harmony_loss': val_metrics['harmony_loss'],
+                'val/rhythm_loss': val_metrics['rhythm_loss'],
+                'val/contour_loss': val_metrics['contour_loss'],
+                'learning_rate': scheduler.get_last_lr()[0]
             })
             
-            # Model saving
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                accelerator.save_state(save_dir / 'best_model.pt')
-                wandb.log({'val/best_loss': best_val_loss})
+            # Save best model
+            if val_metrics['loss'] < best_val_loss:
+                best_val_loss = val_metrics['loss']
+                logger.info(f"New best validation loss: {best_val_loss:.4f}")
+                accelerator.save_state(os.path.join(args.save_dir, 'best_model.pt'))
+                wandb.run.summary['best_val_loss'] = best_val_loss
             
+            # Regular checkpoint saving
             if (epoch + 1) % args.save_every == 0:
-                accelerator.save_state(save_dir / f'checkpoint_epoch_{epoch}.pt')
+                save_path = os.path.join(args.save_dir, f'checkpoint_epoch_{epoch+1}.pt')
+                accelerator.save_state(save_path)
+                logger.info(f"Saved checkpoint: {save_path}")
         
         # Early stopping check
-        if early_stopping(val_loss):
-            logger.info(f'Early stopping triggered after epoch {epoch}')
+        if early_stopping(val_metrics['loss']):
+            logger.info(f"Early stopping triggered after epoch {epoch+1}")
             break
+        
+        # Memory cleanup
+        torch.cuda.empty_cache()
+        gc.collect()
     
+    # Final cleanup and logging
     if accelerator.is_main_process:
+        wandb.run.summary.update({
+            'final_train_loss': train_metrics['loss'],
+            'final_val_loss': val_metrics['loss'],
+            'total_epochs': epoch + 1,
+            'best_val_loss': best_val_loss
+        })
         wandb.finish()
+    
+    logger.info("Training completed successfully")
 
 if __name__ == "__main__":
-    args = parse_args()
-    train(args)
+    main()

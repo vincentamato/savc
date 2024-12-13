@@ -1,5 +1,7 @@
 import os
 import json
+import gc
+import numpy as np
 import torch
 from torch.utils.data import Dataset
 import random
@@ -12,9 +14,11 @@ from torchvision import transforms
 from tqdm import tqdm
 import pickle
 from multiprocessing import Pool
-from functools import partial
 import numpy as np
+from functools import partial
 from dataclasses import dataclass
+from transformers import ViTImageProcessor
+import hashlib
 
 @dataclass
 class MIDIStats:
@@ -42,35 +46,40 @@ class MIDITokenizer:
         self.max_time_shift = max_time_shift
         self.max_duration = max_duration
         
-        # Token type ranges
-        self.NOTE_ON_OFFSET = 0
-        self.NOTE_OFF_OFFSET = max_notes
-        self.VELOCITY_OFFSET = 2 * max_notes
-        self.TIME_SHIFT_OFFSET = 2 * max_notes + max_velocity
-        
-        # Special tokens
-        self.special_tokens = special_tokens or {
-            'PAD': 0,
-            'BOS': 1,
-            'EOS': 2,
-            'MASK': 3
-        }
-        self.special_tokens_inv = {v: k for k, v in self.special_tokens.items()}
-        
+        # Set up special tokens
+        if special_tokens is None:
+            special_tokens = {
+                'PAD': 0,
+                'BOS': 1,
+                'EOS': 2
+            }
+        self.special_tokens = special_tokens
+
+        # Number of special tokens
+        num_special_tokens = len(self.special_tokens)  # Should be 3 in this case
+
+        # Adjust offsets so special tokens do not overlap with musical tokens
+        self.NOTE_ON_OFFSET = num_special_tokens
+        self.NOTE_OFF_OFFSET = self.NOTE_ON_OFFSET + self.max_notes
+        self.VELOCITY_OFFSET = self.NOTE_OFF_OFFSET + self.max_notes
+        self.TIME_SHIFT_OFFSET = self.VELOCITY_OFFSET + self.max_velocity
+
         self.vocab_size = (
-            2 * max_notes +  # Note on/off
-            max_velocity +   # Velocity levels
-            max_time_shift + # Time shifts
-            len(self.special_tokens)
+            num_special_tokens +
+            2 * self.max_notes +  # note on + note off
+            self.max_velocity +
+            self.max_time_shift
         )
-        
-        # Statistics tracking
-        self.stats = {
-            'sequence_lengths': [],
-            'unique_tokens': set(),
-            'token_frequencies': {},
-        }
     
+    def quantize_time(self, seconds: float) -> int:
+        """Convert time in seconds to number of time steps."""
+        steps = int(round(seconds / self.time_step))
+        return min(steps, self.max_time_shift - 1)
+    
+    def quantize_velocity(self, velocity: int) -> int:
+        """Convert MIDI velocity (0-127) to quantized velocity token."""
+        return min(velocity * self.max_velocity // 128, self.max_velocity - 1)
+
     def encode_midi(self, midi_path: str) -> Optional[List[int]]:
         """Encode MIDI file to token sequence."""
         try:
@@ -115,352 +124,455 @@ class MIDITokenizer:
                     break
             
             tokens.append(self.special_tokens['EOS'])
-            self._update_stats(tokens)
             return tokens
-            
+                
         except Exception as e:
             logging.error(f"Error processing MIDI file {midi_path}: {str(e)}")
             return None
-    
-    def decode_to_midi(self, tokens: Union[List[int], torch.Tensor], output_path: Optional[str] = None) -> Union[pretty_midi.PrettyMIDI, Tuple[pretty_midi.PrettyMIDI, str]]:
-        """Decode token sequence back to MIDI file.
-        
-        Args:
-            tokens: List or tensor of tokens
-            output_path: Optional path to save the MIDI file
-            
-        Returns:
-            If output_path is None: Returns PrettyMIDI object
-            If output_path is provided: Returns tuple of (PrettyMIDI object, output_path)
-        """
-        try:
-            if isinstance(tokens, torch.Tensor):
-                tokens = tokens.cpu().tolist()
-            
-            midi_data = pretty_midi.PrettyMIDI()
-            instrument = pretty_midi.Instrument(program=0)  # Piano by default
-            
-            current_time = 0.0
-            current_velocity = 64  # Default velocity
-            active_notes = {}  # pitch -> start_time
-            
-            for token in tokens:
-                # Skip special tokens
-                if token in self.special_tokens.values():
-                    continue
-                
-                # Process token based on type
-                if self.NOTE_ON_OFFSET <= token < self.NOTE_OFF_OFFSET:
-                    # Note on event
-                    pitch = token - self.NOTE_ON_OFFSET
-                    active_notes[pitch] = current_time
-                
-                elif self.NOTE_OFF_OFFSET <= token < self.VELOCITY_OFFSET:
-                    # Note off event
-                    pitch = token - self.NOTE_OFF_OFFSET
-                    if pitch in active_notes:
-                        start_time = active_notes[pitch]
-                        note = pretty_midi.Note(
-                            velocity=current_velocity,
-                            pitch=pitch,
-                            start=start_time,
-                            end=current_time
-                        )
-                        instrument.notes.append(note)
-                        del active_notes[pitch]
-                
-                elif self.VELOCITY_OFFSET <= token < self.TIME_SHIFT_OFFSET:
-                    # Velocity change
-                    current_velocity = (token - self.VELOCITY_OFFSET) * (128 // self.max_velocity)
-                
-                elif self.TIME_SHIFT_OFFSET <= token < self.vocab_size:
-                    # Time shift
-                    time_steps = token - self.TIME_SHIFT_OFFSET
-                    current_time += time_steps * self.time_step
-            
-            # Close any still-active notes
-            for pitch, start_time in active_notes.items():
-                note = pretty_midi.Note(
-                    velocity=current_velocity,
-                    pitch=pitch,
-                    start=start_time,
-                    end=current_time
-                )
-                instrument.notes.append(note)
-            
-            midi_data.instruments.append(instrument)
-            
-            if output_path:
-                midi_data.write(output_path)
-                return midi_data, output_path
-            
-            return midi_data
-            
-        except Exception as e:
-            logging.error(f"Error decoding tokens to MIDI: {str(e)}")
-            return None
-        
-def tokenize_midi_file(args: Tuple[str, str, Dict]) -> Optional[Dict]:
-    """Tokenize a single MIDI file with caching."""
-    midi_path, cache_path, tokenizer_params = args
-    cache_file = Path(cache_path) / f"{Path(midi_path).stem}.pkl"
-    
-    # Check cache first
-    if cache_file.exists():
-        try:
-            with open(cache_file, 'rb') as f:
-                return {'path': midi_path, 'tokens': pickle.load(f)}
-        except Exception:
-            pass
-    
-    # Tokenize
-    tokenizer = MIDITokenizer(**tokenizer_params)
-    tokens = tokenizer.encode_midi(midi_path)
-    
-    if tokens is not None:
-        # Save to cache
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(cache_file, 'wb') as f:
-            pickle.dump(tokens, f)
-        return {'path': midi_path, 'tokens': tokens}
-    
-    return None
 
+def tokenize_midi_file_sequential(midi_path: str, tokenizer_params: Dict, cache_dir: str) -> Optional[Dict]:
+    """
+    Tokenize a single MIDI file with caching for sequential processing.
+
+    Args:
+        midi_path (str): Path to the MIDI file.
+        tokenizer_params (Dict): Parameters for the MIDITokenizer.
+        cache_dir (str): Directory to store cached tokens.
+
+    Returns:
+        Optional[Dict]: Dictionary containing MIDI path and tokens, or None if processing fails.
+    """
+    cache_file = Path(cache_dir) / f"{Path(midi_path).stem}.pt"
+
+    try:
+        # Check cache first
+        if cache_file.exists():
+            tokens = torch.load(cache_file)
+            return {'path': midi_path, 'tokens': tokens}
+
+        # Tokenize
+        tokenizer = MIDITokenizer(**tokenizer_params)
+        tokens = tokenizer.encode_midi(midi_path)
+
+        if tokens is not None:
+            tokens = torch.tensor(tokens, dtype=torch.long)
+            # Save to cache using numpy first
+            npy_cache = str(cache_file).replace('.pt', '.npy')
+            np.save(npy_cache, tokens.numpy())
+            torch.save(tokens, cache_file)
+            os.remove(npy_cache)
+            return {'path': midi_path, 'tokens': tokens}
+
+    except Exception as e:
+        error_message = f"Error processing {midi_path}: {str(e)}"
+        print(error_message)
+        logging.error(error_message)
+        return None
+    
 class ImageMIDIDataset(Dataset):
     def __init__(
         self,
         base_dir: str,
         max_seq_length: int = 1024,
-        image_size: int = 384,
+        vit_model_name: str = "google/vit-base-patch16-384",
         split: Optional[str] = None,
         val_size: float = 0.1,
         test_size: float = 0.1,
         seed: int = 42,
-        cache_dir: Optional[str] = None,
-        num_workers: int = 32,
-        max_duration: float = 30.0
+        num_workers: int = 1,
+        max_duration: float = 30.0,
+        use_cache: bool = True,
+        tokenizer_params: Optional[Dict] = None
     ):
         self.base_dir = Path(base_dir)
         self.max_seq_length = max_seq_length
-        print(f"Initializing dataset with max_seq_length: {max_seq_length}")
-        self.cache_dir = Path(cache_dir) if cache_dir else self.base_dir / 'token_cache'
+        self.use_cache = use_cache
+        self.vit_model_name = vit_model_name  # Store the model name
         
-        print("Initializing dataset transforms...")
-        self.transform = transforms.Compose([
-            transforms.Resize((image_size, image_size)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        ])
+        # Initialize image processor
+        self.image_processor = ViTImageProcessor.from_pretrained(vit_model_name)
+
+        # Use existing cache directory
+        self.cache_dir = Path("~/savc/cache").expanduser()
+        self.token_cache_dir = self.cache_dir / 'tokens'
+        self.image_cache_dir = self.cache_dir / 'images'
         
-        # Load matches data
-        print("Loading matches.json...")
+        if use_cache:
+            print(f"\nUsing existing cache directories:")
+            print(f"Token cache: {self.token_cache_dir}")
+            print(f"Image cache: {self.image_cache_dir}")
+            
+            if not self.token_cache_dir.exists() or not self.image_cache_dir.exists():
+                print("Warning: Cache directories not found. Creating new cache directories.")
+                self.token_cache_dir.mkdir(parents=True, exist_ok=True)
+                self.image_cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # Initialize tokenizer
+        default_tokenizer_params = {
+            'max_notes': 128,
+            'max_velocity': 32,
+            'time_step': 0.125,
+            'max_time_shift': 100,
+            'max_duration': max_duration,
+            'special_tokens': {
+                'PAD': 0,
+                'BOS': 1,
+                'EOS': 2
+            }
+        }
+        if tokenizer_params:
+            default_tokenizer_params.update(tokenizer_params)
+        
+        self.tokenizer = MIDITokenizer(**default_tokenizer_params)
+
+        # Load matches and create pairs
+        self._load_matches_and_create_pairs()
+        
+        # Process only uncached MIDI files
+        if use_cache:
+            self._load_or_process_midi_files(default_tokenizer_params)
+
+        # Handle dataset split
+        if split is not None:
+            self._split_dataset(split, val_size, test_size, seed)
+
+        self._compute_statistics()
+
+    def _process_image(self, image_path: str) -> torch.Tensor:
+        """Process an image file into a tensor suitable for ViT."""
+        try:
+            # Check cache first
+            cache_path = self._get_image_cache_path(str(image_path))
+            if self.use_cache and cache_path.exists():
+                return torch.load(cache_path)
+
+            # Load and convert image
+            image = Image.open(image_path).convert('RGB')
+            
+            # Process image using ViT processor
+            inputs = self.image_processor(images=image, return_tensors="pt")
+            image_tensor = inputs['pixel_values'].squeeze(0)
+
+            # Cache the processed tensor
+            if self.use_cache:
+                torch.save(image_tensor, cache_path)
+
+            return image_tensor
+
+        except Exception as e:
+            logging.error(f"Error processing image {image_path}: {str(e)}")
+            # Return a zero tensor with the correct shape for ViT-base
+            return torch.zeros((3, 384, 384))
+
+    def _get_image_cache_path(self, image_path: str) -> Path:
+        """Generate a cache file path for processed images."""
+        # Create a unique identifier based on the image path and vit model
+        identifier = f"{image_path}_{self.vit_model_name}"
+        cache_name = hashlib.md5(identifier.encode()).hexdigest()
+        return self.image_cache_dir / f"{cache_name}.pt"
+
+    def __getitem__(self, idx):
+        """Get a single item from the dataset."""
+        pair = self.valid_pairs[idx]
+        
+        # Process image
+        image_tensor = self._process_image(pair['image_path'])
+        
+        # Get tokens from lookup
+        tokens = self.tokens_lookup.get(pair['midi_path'], torch.zeros(self.max_seq_length, dtype=torch.long))
+        tokens = tokens[:self.max_seq_length].clone()
+        
+        # Create token types
+        token_types = torch.zeros_like(tokens)  # Simplified token types
+        
+        # Pad sequences if necessary
+        if len(tokens) < self.max_seq_length:
+            padding_length = self.max_seq_length - len(tokens)
+            tokens = torch.cat([tokens, torch.zeros(padding_length, dtype=torch.long)])
+            token_types = torch.cat([token_types, torch.zeros(padding_length, dtype=torch.long)])
+            attention_mask = torch.cat([
+                torch.ones(len(self.tokens_lookup.get(pair['midi_path'], [])), dtype=torch.bool),
+                torch.zeros(padding_length, dtype=torch.bool)
+            ])
+        else:
+            attention_mask = torch.ones(self.max_seq_length, dtype=torch.bool)
+        
+        return {
+            'image': image_tensor,
+            'tokens': tokens,
+            'token_types': token_types,
+            'attention_mask': attention_mask,
+            'length': min(len(self.tokens_lookup.get(pair['midi_path'], [])), self.max_seq_length),
+            'style': pair['style'],
+            'similarity_score': pair['similarity_score'],
+            'emotional_match': pair['emotional_match']
+        }
+
+    def _process_midi_files_sequential(self, unique_midis, tokenizer_params):
+        """Process MIDI files sequentially using simpler cache paths."""
+        self.tokens_lookup = {}
+        cache_hits = 0
+        to_process = set()
+        
+        # First try to load all from cache
+        print("\nChecking existing cache...")
+        for midi_path in tqdm(unique_midis, desc="Loading from cache"):
+            cache_file = self._get_cache_path(midi_path)
+            if cache_file.exists():
+                try:
+                    tokens = torch.load(cache_file)
+                    if tokens is not None and len(tokens) > 0:
+                        self.tokens_lookup[midi_path] = tokens
+                        cache_hits += 1
+                    else:
+                        to_process.add(midi_path)
+                except Exception as e:
+                    print(f"Error loading cache for {midi_path}: {e}")
+                    to_process.add(midi_path)
+            else:
+                to_process.add(midi_path)
+        
+        print(f"\nCache status:")
+        print(f"Found {cache_hits} cached files")
+        print(f"Need to process {len(to_process)} files")
+        
+        # Process only uncached files
+        if to_process:
+            print("\nProcessing uncached files...")
+            processed_count = 0
+            error_count = 0
+            
+            for midi_path in tqdm(to_process, desc="Processing new files"):
+                try:
+                    tokens = self.tokenizer.encode_midi(midi_path)
+                    if tokens is not None and len(tokens) > 0:
+                        tokens = torch.tensor(tokens, dtype=torch.long)
+                        cache_file = self._get_cache_path(midi_path)
+                        torch.save(tokens, cache_file)
+                        self.tokens_lookup[midi_path] = tokens
+                        processed_count += 1
+                except Exception as e:
+                    error_count += 1
+                    print(f"Error processing {midi_path}: {e}")
+                    
+            print(f"\nProcessing results:")
+            print(f"Successfully processed: {processed_count}")
+            print(f"Errors: {error_count}")
+        
+        if len(self.tokens_lookup) > 0:
+            lengths = [len(t) for t in self.tokens_lookup.values()]
+            print(f"\nToken statistics:")
+            print(f"Min length: {min(lengths)}")
+            print(f"Max length: {max(lengths)}")
+            print(f"Mean length: {sum(lengths)/len(lengths):.2f}")
+
+    def _load_matches_and_create_pairs(self):
+        """Load matches data and create initial pairs"""
+        print("\nLoading matches.json...")
         matches_path = self.base_dir / 'matches.json'
         with open(matches_path) as f:
             self.matches_data = json.load(f)
-        
-        # Build initial pairs
+
         print("Creating initial pairs...")
         self.all_pairs = []
-        unique_midis = set()
-        
-        for artwork_path, match_data in tqdm(self.matches_data['matches'].items(), 
-                                           desc="Processing artworks"):
+        self.unique_midis = set()
+        midi_not_found = set()
+
+        for artwork_path, match_data in tqdm(self.matches_data['matches'].items(), desc="Processing artworks"):
             artwork_path = artwork_path.replace('data/', '')
             artwork_path = self.base_dir / artwork_path
-            
             style = artwork_path.parent.name
-            
+
             for midi_match in match_data['midi_matches']:
                 midi_path = midi_match['midi_path'].replace('data/unique_midis/', 'midis/')
                 midi_path = self.base_dir / midi_path
-                unique_midis.add(str(midi_path))
                 
+                if not midi_path.exists():
+                    midi_not_found.add(str(midi_path))
+                    continue
+                    
+                self.unique_midis.add(str(midi_path))
                 self.all_pairs.append({
                     'image_path': artwork_path,
-                    'midi_path': midi_path,
+                    'midi_path': str(midi_path),
                     'style': style,
                     'similarity_score': midi_match['similarity_score'],
                     'emotional_match': midi_match['emotional_match'],
                     'artwork_info': match_data['artwork_info']
                 })
-        
-        print(f"Found {len(self.all_pairs)} total pairs using {len(unique_midis)} unique MIDI files")
-        
-        # Tokenize all unique MIDI files in parallel
-        print("\nTokenizing MIDI files in parallel...")
-        tokenizer_params = {
-            'max_notes': 128,
-            'max_velocity': 32,
-            'time_step': 0.125,
-            'max_time_shift': 100,
-            'max_duration': max_duration
-        }
-        
-        with Pool(num_workers) as pool:
-            midi_args = [(str(path), str(self.cache_dir), tokenizer_params) 
-                        for path in unique_midis]
-            tokens_data = list(tqdm(
-                pool.imap(tokenize_midi_file, midi_args),
-                total=len(midi_args),
-                desc="Tokenizing MIDIs"
-            ))
-        
-        # Create tokens lookup dictionary
-        self.tokens_lookup = {
-            item['path']: torch.LongTensor(item['tokens'][:self.max_seq_length]).pin_memory()
-            for item in tokens_data 
-            if item is not None
-        }
-        
-        # Add tokens to pairs
-        self.valid_pairs = [
-            {**pair, 'tokens': self.tokens_lookup[str(pair['midi_path'])]}
-            for pair in self.all_pairs
-            if str(pair['midi_path']) in self.tokens_lookup
-        ]
-        
-        print(f"Successfully processed {len(self.valid_pairs)} valid pairs")
-        
-        # Handle split if specified
-        if split is not None:
-            random.seed(seed)
-            indices = list(range(len(self.valid_pairs)))
-            random.shuffle(indices)
-            
-            total_size = len(indices)
-            test_idx = int(total_size * (1 - test_size))
-            val_idx = int(test_idx * (1 - val_size))
-            
-            if split == 'train':
-                selected_indices = indices[:val_idx]
-            elif split == 'val':
-                selected_indices = indices[val_idx:test_idx]
-            else:  # test
-                selected_indices = indices[test_idx:]
-                
-            self.valid_pairs = [self.valid_pairs[i] for i in selected_indices]
-            print(f"Final {split} set size: {len(self.valid_pairs)} pairs")
 
-        token_lengths = [len(pair['tokens']) for pair in self.valid_pairs]
-        print("\nToken sequence statistics:")
-        print(f"Mean length: {np.mean(token_lengths):.2f}")
-        print(f"Max length: {max(token_lengths)}")
-        print(f"Min length: {min(token_lengths)}")
-        print(f"Number of sequences > {max_seq_length}: {sum(1 for l in token_lengths if l > max_seq_length)}")
-    
-    def __len__(self) -> int:
+        print(f"\nPath verification:")
+        print(f"Found {len(self.unique_midis)} unique MIDI files")
+        if midi_not_found:
+            print(f"Warning: {len(midi_not_found)} MIDI files not found")
+
+    def _load_or_process_midi_files(self, tokenizer_params):
+        """Load from cache or process only uncached MIDI files"""
+        self.tokens_lookup = {}
+        cache_hits = 0
+        to_process = set()
+        
+        # First try to load all from cache
+        print("\nChecking existing cache...")
+        for midi_path in tqdm(self.unique_midis, desc="Loading from cache"):
+            cache_file = self._get_cache_path(midi_path)
+            if cache_file.exists():
+                try:
+                    tokens = torch.load(cache_file)
+                    if tokens is not None and len(tokens) > 0:
+                        self.tokens_lookup[midi_path] = tokens
+                        cache_hits += 1
+                    else:
+                        to_process.add(midi_path)
+                except Exception as e:
+                    print(f"Error loading cache for {midi_path}: {e}")
+                    to_process.add(midi_path)
+            else:
+                to_process.add(midi_path)
+        
+        print(f"\nCache status:")
+        print(f"Found {cache_hits} cached files")
+        print(f"Need to process {len(to_process)} files")
+        
+        # Process only uncached files
+        if to_process:
+            print("\nProcessing uncached files...")
+            processed_count = 0
+            error_count = 0
+            
+            for midi_path in tqdm(to_process, desc="Processing new files"):
+                try:
+                    tokens = self.tokenizer.encode_midi(midi_path)
+                    if tokens is not None and len(tokens) > 0:
+                        tokens = torch.tensor(tokens, dtype=torch.long)
+                        cache_file = self._get_cache_path(midi_path)
+                        torch.save(tokens, cache_file)
+                        self.tokens_lookup[midi_path] = tokens
+                        processed_count += 1
+                except Exception as e:
+                    error_count += 1
+                    print(f"Error processing {midi_path}: {e}")
+            
+            print(f"\nProcessing results:")
+            print(f"Successfully processed: {processed_count}")
+            print(f"Errors: {error_count}")
+        
+        print(f"Total tokens in lookup: {len(self.tokens_lookup)}")
+
+    def _split_dataset(self, split: str, val_size: float, test_size: float, seed: int):
+        """Split dataset into train/val/test sets."""
+        random.seed(seed)
+        
+        # Create list of indices
+        indices = list(range(len(self.all_pairs)))
+        random.shuffle(indices)
+        
+        # Calculate split points
+        total_size = len(indices)
+        test_idx = int(total_size * (1 - test_size))
+        val_idx = int(test_idx * (1 - val_size))
+        
+        # Select appropriate indices based on split
+        if split == 'train':
+            selected_indices = indices[:val_idx]
+        elif split == 'val':
+            selected_indices = indices[val_idx:test_idx]
+        else:  # test
+            selected_indices = indices[test_idx:]
+        
+        # Filter pairs to only include selected indices
+        self.valid_pairs = [self.all_pairs[i] for i in selected_indices]
+        
+        print(f"\nDataset split ({split}):")
+        print(f"Total pairs: {total_size}")
+        print(f"Selected pairs: {len(self.valid_pairs)}")
+        
+        # Additional information about the split
+        styles = {}
+        for pair in self.valid_pairs:
+            style = pair['style']
+            styles[style] = styles.get(style, 0) + 1
+        
+        print("\nStyle distribution:")
+        for style, count in sorted(styles.items(), key=lambda x: x[1], reverse=True)[:5]:
+            print(f"{style}: {count} ({count/len(self.valid_pairs)*100:.1f}%)")
+
+    def _compute_statistics(self):
+        """Compute dataset statistics."""
+        if not hasattr(self, 'valid_pairs'):
+            print("\nWarning: No valid pairs available for statistics!")
+            return
+            
+        if not self.tokens_lookup:
+            print("\nWarning: No tokens in lookup dictionary!")
+            return
+        
+        token_lengths = []
+        empty_tokens = 0
+        
+        for pair in self.valid_pairs:
+            tokens = self.tokens_lookup.get(str(pair['midi_path']), [])
+            if len(tokens) == 0:
+                empty_tokens += 1
+            else:
+                token_lengths.append(len(tokens))
+        
+        if token_lengths:
+            print(f"\nSequence length statistics:")
+            print(f"Mean length: {np.mean(token_lengths):.2f}")
+            print(f"Max length: {max(token_lengths)}")
+            print(f"Min length: {min(token_lengths)}")
+            print(f"Sequences > {self.max_seq_length}: {sum(1 for l in token_lengths if l > self.max_seq_length)}")
+            if empty_tokens > 0:
+                print(f"Warning: {empty_tokens} sequences have no tokens")
+        else:
+            print("\nWarning: No valid token sequences found!")
+
+    def __len__(self):
+        """Return the number of valid pairs."""
         return len(self.valid_pairs)
     
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        pair = self.valid_pairs[idx]
-        
-        # Load and transform image
-        image = Image.open(pair['image_path']).convert('RGB')
-        image_tensor = self.transform(image)
-        
-        # Properly clone and detach tokens
-        tokens = pair['tokens'][:self.max_seq_length].clone().detach()
-        
-        # Pad if necessary using torch operations
-        if len(tokens) < self.max_seq_length:
-            padding = torch.zeros(self.max_seq_length - len(tokens), dtype=torch.long)
-            tokens = torch.cat([tokens, padding])
+    def _get_cache_path(self, midi_path: str) -> Path:
+        """Generate a cache file path from MIDI path to match existing cache."""
+        # Just use the stem of the MIDI path for consistency with existing cache
+        safe_name = Path(midi_path).stem
+        return self.token_cache_dir / f"{safe_name}.pt"
 
-        return {
-            'image': image_tensor,
-            'tokens': tokens,
-            'length': min(len(pair['tokens']), self.max_seq_length),
-            'style': pair['style'],
-            'similarity_score': pair['similarity_score'],
-            'emotional_match': pair['emotional_match'],
-            'artwork_info': pair['artwork_info']
-        }
+    def _compute_token_types(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Compute token type IDs for the sequence."""
+        token_types = torch.zeros_like(tokens)
+        
+        # Identify different token types
+        for i, token in enumerate(tokens):
+            if token >= self.tokenizer.TIME_SHIFT_OFFSET:
+                token_types[i] = 3  # Time shift
+            elif token >= self.tokenizer.VELOCITY_OFFSET:
+                token_types[i] = 2  # Velocity
+            elif token >= self.tokenizer.NOTE_OFF_OFFSET:
+                token_types[i] = 1  # Note off
+            # Note on and special tokens remain 0
+            
+        return token_types
 
-def create_dataloader(
-    dataset: ImageMIDIDataset,
-    batch_size: int = 32,
-    shuffle: bool = True,
-    num_workers: int = 4,
-    pin_memory: bool = True
-):
-    return torch.utils.data.DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        persistent_workers=True,
-        prefetch_factor=2
-    )
-
+    
 def get_dataset(
     base_dir: str,
     split: str = 'train',
     num_workers: int = 32,
-    **dataset_kwargs
+    tokenizer_params: Optional[Dict] = None,
+    max_seq_length: int = 1024,
+    vit_model_name: str = "google/vit-base-patch16-384",
+    max_duration: float = 30.0,
+    **kwargs
 ) -> ImageMIDIDataset:
-    """Get dataset split directly without creating multiple instances.
-    
-    Args:
-        base_dir (str): Base directory containing the dataset
-        split (str): Dataset split ('train', 'val', or 'test')
-        num_workers (int): Number of workers for parallel processing
-        **dataset_kwargs: Additional arguments for ImageMIDIDataset
-    
-    Returns:
-        ImageMIDIDataset: The dataset instance for the specified split
-    """
+    """Get dataset split with optional parameters."""
     return ImageMIDIDataset(
         base_dir=base_dir,
         split=split,
         num_workers=num_workers,
-        **dataset_kwargs
+        tokenizer_params=tokenizer_params,
+        max_seq_length=max_seq_length,
+        vit_model_name=vit_model_name,
+        max_duration=max_duration,
+        **kwargs
     )
-
-if __name__ == "__main__":
-    # Example usage and dataset analysis
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='Analyze dataset and create samples')
-    parser.add_argument('--data_dir', type=str, required=True, help='Path to dataset directory')
-    parser.add_argument('--max_duration', type=float, default=30.0, help='Maximum MIDI duration in seconds')
-    parser.add_argument('--test_decode', action='store_true', help='Test MIDI decoding')
-    args = parser.parse_args()
-    
-    # Create dataset instance
-    dataset = get_dataset(
-        base_dir=args.data_dir,
-        split='train',
-        max_duration=args.max_duration
-    )
-    
-    # Print memory usage
-    if torch.cuda.is_available():
-        print("\nGPU Memory Usage:")
-        print(f"Allocated: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
-        print(f"Reserved: {torch.cuda.memory_reserved() / 1e9:.2f} GB")
-    
-    # Create and test dataloader
-    dataloader = create_dataloader(dataset, batch_size=4)
-    
-    print("\nTesting dataloader...")
-    for batch_idx, batch in enumerate(dataloader):
-        if batch_idx == 0:
-            print(f"Batch size: {batch['image'].size()}")
-            print(f"Token sequence length: {batch['tokens'].size()}")
-            print(f"Number of unique tokens: {batch['tokens'].unique().size(0)}")
-            
-            # Test decoding if requested
-            if args.test_decode:
-                print("\nTesting MIDI decoding...")
-                tokenizer = MIDITokenizer(max_duration=args.max_duration)
-                midi_data, output_path = tokenizer.decode_to_midi(
-                    batch['tokens'][0],
-                    output_path="test_decoded.mid"
-                )
-                if midi_data:
-                    print("Successfully decoded tokens to MIDI!")
-                    print(f"Duration: {midi_data.get_end_time():.2f} seconds")
-                    print(f"Number of notes: {sum(len(inst.notes) for inst in midi_data.instruments)}")
-                    print(f"Saved to: {output_path}")
-            break
