@@ -2,6 +2,8 @@ import torch
 import math
 from torch import nn
 import torch.nn.functional as F
+import numpy as np
+import traceback
 
 class ChordProgressionLoss(nn.Module):
     def __init__(self):
@@ -306,71 +308,74 @@ class MusicGenerationLoss(nn.Module):
         self.rhythm_loss = RhythmConsistencyLoss()
         self.contour_loss = MelodicContourLoss()
         
-        # Token type offsets (these should match your tokenizer)
-        self.NOTE_ON_OFFSET = 3  # Assuming typical values, adjust as needed
-        self.NOTE_OFF_OFFSET = self.NOTE_ON_OFFSET + 128
-        self.VELOCITY_OFFSET = self.NOTE_OFF_OFFSET + 128
-        self.TIME_SHIFT_OFFSET = self.VELOCITY_OFFSET + 128
-        self.time_step = 0.02  # 20ms time step
+        # Token type offsets
+        self.NOTE_ON_OFFSET = 0      # NOTE_ON tokens start at 0
+        self.NOTE_OFF_OFFSET = 128   # NOTE_OFF tokens start at 128
+        self.VELOCITY_OFFSET = 256   # Velocity tokens start at 256
+        self.TIME_SHIFT_OFFSET = 384 # Start of time shift tokens
+        
+        self.pad_token_id = 388      # Adjust based on your vocabulary size
+        self.time_step = 0.01        # Adjust based on your time quantization
+        
+        # Initialize smoothed weights
+        self.harmony_weight = 0.3
+        self.rhythm_weight = 0.3
+        self.contour_weight = 0.2
+        
+        # Register as buffers so they persist between forward passes
+        self.register_buffer('harmony_weight_smooth', torch.tensor(0.3))
+        self.register_buffer('rhythm_weight_smooth', torch.tensor(0.3))
+        self.register_buffer('contour_weight_smooth', torch.tensor(0.2))
         
     def forward(self, predictions, targets, attention_mask=None):
-        """Forward pass with debugging"""
+        """Forward pass returning loss dictionary"""
         # Handle tuple output from the model
         if isinstance(predictions, tuple):
             predictions, token_types = predictions
-
-        # Add debugging for predictions and targets
-        # print("\nDebug Loss Computation:")
-        # print(f"Predictions shape: {predictions.shape}")
-        # print(f"Targets shape: {targets.shape}")
-        # print(f"Predictions range: min={predictions.min().item():.4f}, max={predictions.max().item():.4f}")
+        
+        device = predictions.device
         
         # Basic token loss
         token_loss = self.token_criterion(
             predictions.view(-1, self.vocab_size),
             targets.view(-1)
         )
-        # print(f"Token loss: {token_loss.item():.4f}")
         
-        # Extract and debug musical features
+        # Extract musical features
         harmony_features = self.extract_harmony_features(predictions, targets)
         rhythm_features = self.extract_rhythm_features(predictions, targets)
         contour_features = self.extract_contour_features(predictions, targets)
         
-        # Debug extracted features
-        # print("\nFeature Extraction Debug:")
-        # self._debug_features("Harmony", harmony_features)
-        # self._debug_features("Rhythm", rhythm_features)
-        # self._debug_features("Contour", contour_features)
+        # Initialize losses with small epsilon to avoid pure zeros
+        epsilon = 1e-8
+        harmony_loss = torch.tensor(epsilon, device=device)
+        rhythm_loss = torch.tensor(epsilon, device=device)
+        contour_loss = torch.tensor(epsilon, device=device)
         
-        # Compute musical losses with debugging
-        harmony_loss = self.harmony_loss(harmony_features)
-        rhythm_loss = self.rhythm_loss(rhythm_features)
-        contour_loss = self.contour_loss(contour_features)
+        # Calculate individual losses if features exist
+        if harmony_features is not None and len(harmony_features[0]) > 0:
+            harmony_loss = self.harmony_loss(harmony_features)
         
-        # print("\nComponent Losses:")
-        # print(f"Harmony loss: {harmony_loss.item():.4f}")
-        # print(f"Rhythm loss: {rhythm_loss.item():.4f}")
-        # print(f"Contour loss: {contour_loss.item():.4f}")
+        if rhythm_features is not None and len(rhythm_features[0]) > 0:
+            rhythm_loss = self.rhythm_loss(rhythm_features)
         
-        # Compute weights with debugging
-        harmony_weight = 0.3 * self.get_curriculum_weight(harmony_loss)
-        rhythm_weight = 0.3 * self.get_curriculum_weight(rhythm_loss)
-        contour_weight = 0.2 * self.get_curriculum_weight(contour_loss)
+        if contour_features is not None and len(contour_features[0]) > 0:
+            contour_loss = self.contour_loss(contour_features)
         
-        # print("\nLoss Weights:")
-        # print(f"Harmony weight: {harmony_weight.item():.4f}")
-        # print(f"Rhythm weight: {rhythm_weight.item():.4f}")
-        # print(f"Contour weight: {contour_weight.item():.4f}")
+        # Update smoothed weights using exponential moving average
+        self.harmony_weight_smooth = 0.95 * self.harmony_weight_smooth + 0.05 * self.get_curriculum_weight(harmony_loss)
+        self.rhythm_weight_smooth = 0.95 * self.rhythm_weight_smooth + 0.05 * self.get_curriculum_weight(rhythm_loss)
+        self.contour_weight_smooth = 0.95 * self.contour_weight_smooth + 0.05 * self.get_curriculum_weight(contour_loss)
         
-        # Compute total loss with safety checks
+        # Calculate total loss with smoothed weights
         total_loss = token_loss
+        
         if not torch.isnan(harmony_loss):
-            total_loss = total_loss + harmony_weight * harmony_loss
+            total_loss += self.harmony_weight_smooth * harmony_loss
         if not torch.isnan(rhythm_loss):
-            total_loss = total_loss + rhythm_weight * rhythm_loss
+            total_loss += self.rhythm_weight_smooth * rhythm_loss
         if not torch.isnan(contour_loss):
-            total_loss = total_loss + contour_weight * contour_loss
+            total_loss += self.contour_weight_smooth * contour_loss
         
         return {
             'token_loss': token_loss,
@@ -397,9 +402,11 @@ class MusicGenerationLoss(nn.Module):
 
     # Token type checking helpers
     def is_note_on(self, token):
+        """Check if token is a NOTE_ON token"""
         return self.NOTE_ON_OFFSET <= token < self.NOTE_OFF_OFFSET
         
     def is_note_off(self, token):
+        """Check if token is a NOTE_OFF token"""
         return self.NOTE_OFF_OFFSET <= token < self.VELOCITY_OFFSET
         
     def is_time_shift(self, token):
@@ -410,95 +417,95 @@ class MusicGenerationLoss(nn.Module):
         return torch.sigmoid(1 - loss.detach())
     
     def extract_harmony_features(self, predictions, targets):
-        """Extract harmony-related features from predictions and targets with alignment"""
-        device = predictions.device
-        pred_notes = predictions.argmax(dim=-1)
-        batch_size, seq_len = pred_notes.shape
-        
-        # print(f"\nDebug Harmony Extraction:")
-        # print(f"Pred notes shape: {pred_notes.shape}")
-        # print(f"Range: [{pred_notes.min()}, {pred_notes.max()}]")
-        
-        # Extract chords with sequence alignment
-        pred_chords = []
-        target_chords = []
-        
-        for b in range(batch_size):
-            # Process predicted sequence
-            active_notes = set()
-            for token in pred_notes[b]:
+        """Extract harmony features with corrected tensor handling"""
+        try:
+            device = predictions.device
+            
+            # Handle predictions
+            pred_notes = predictions.argmax(dim=-1)  # [batch_size, seq_len]
+            
+            # Handle targets - ensure it's the right shape
+            if targets.dim() == 3:
+                target_notes = targets.argmax(dim=-1)  # [batch_size, seq_len]
+            else:
+                target_notes = targets  # Already in the right format
+                
+            # Process first sequence in batch
+            pred_sequence = pred_notes[0]  # [seq_len]
+            target_sequence = target_notes[0]  # [seq_len]
+            
+            # Build prediction chords
+            pred_chords = []
+            current_chord = []
+            
+            for token in pred_sequence:
                 token = token.item()
-                
-                if self.is_note_on(token):
-                    note = token - self.NOTE_ON_OFFSET
-                    active_notes.add(note)
-                elif self.is_note_off(token):
-                    note = token - self.NOTE_OFF_OFFSET
-                    active_notes.discard(note)
-                
-                if active_notes:
-                    chord = sorted(list(active_notes))
-                    pred_chords.append(chord)
+                if token < 128:  # Note tokens
+                    current_chord.append(token)
+                    if len(current_chord) >= 1:  # Create chord for each note
+                        pred_chords.append(current_chord.copy())
+                else:  # Non-note tokens mark chord boundaries
+                    if current_chord:
+                        current_chord = []
+                        
+            # Build target chords similarly
+            target_chords = []
+            current_chord = []
             
-            # Process target sequence
-            active_notes = set()
-            for token in targets[b]:
+            for token in target_sequence:
                 token = token.item()
+                if token < 128:
+                    current_chord.append(token)
+                    if len(current_chord) >= 1:
+                        target_chords.append(current_chord.copy())
+                else:
+                    if current_chord:
+                        current_chord = []
+            
+            # Ensure we have at least one chord
+            if not pred_chords:
+                pred_chords = [[0]]
+            if not target_chords:
+                target_chords = [[0]]
                 
-                if self.is_note_on(token):
-                    note = token - self.NOTE_ON_OFFSET
-                    active_notes.add(note)
-                elif self.is_note_off(token):
-                    note = token - self.NOTE_OFF_OFFSET
-                    active_notes.discard(note)
+            # Convert to tensors with padding
+            max_chord_size = max(
+                max(len(chord) for chord in pred_chords),
+                max(len(chord) for chord in target_chords)
+            )
+            
+            pred_tensor = torch.zeros((len(pred_chords), max_chord_size), device=device)
+            target_tensor = torch.zeros((len(target_chords), max_chord_size), device=device)
+            
+            for i, chord in enumerate(pred_chords):
+                pred_tensor[i, :len(chord)] = torch.tensor(chord, device=device)
                 
-                if active_notes:
-                    chord = sorted(list(active_notes))
-                    target_chords.append(chord)
-        
-        # Convert to tensors with padding
-        if pred_chords and target_chords:
-            max_voices = max(max(len(c) for c in pred_chords), max(len(c) for c in target_chords))
+            for i, chord in enumerate(target_chords):
+                target_tensor[i, :len(chord)] = torch.tensor(chord, device=device)
+                
+            return pred_tensor, target_tensor
             
-            # Pad chords to same length
-            padded_pred_chords = []
-            for chord in pred_chords:
-                if len(chord) < max_voices:
-                    chord = chord + [0] * (max_voices - len(chord))
-                padded_pred_chords.append(torch.tensor(chord, device=device))
-            
-            padded_target_chords = []
-            for chord in target_chords:
-                if len(chord) < max_voices:
-                    chord = chord + [0] * (max_voices - len(chord))
-                padded_target_chords.append(torch.tensor(chord, device=device))
-            
-            pred_chords = torch.stack(padded_pred_chords)
-            target_chords = torch.stack(padded_target_chords)
-        else:
-            # Return dummy tensors if no chords found
-            pred_chords = torch.zeros((1, 1), device=device)
-            target_chords = torch.zeros((1, 1), device=device)
-        
-        # print(f"Extracted chords shapes - Pred: {pred_chords.shape}, Target: {target_chords.shape}")
-        return pred_chords, target_chords
-
+        except Exception as e:
+            print(f"Warning in extract_harmony_features: {str(e)}")
+            print(f"Stack trace: {traceback.format_exc()}")
+            return None
     
     def extract_rhythm_features(self, predictions, targets):
         """Extract rhythm-related features from predictions and targets"""
         device = predictions.device
         pred_tokens = predictions.argmax(dim=-1)
         
-        # print("\nDebug Rhythm Extraction:")
-        # print(f"Pred tokens shape: {pred_tokens.shape}")
-        
-        # Extract onset times and durations
-        onset_times = []
-        durations = []
+        # Initialize tracking variables
         current_time = 0.0
         note_start_times = {}
+        onset_times = []
+        durations = []
         
+        # Process each sequence in the batch
         for sequence in pred_tokens:
+            current_time = 0.0
+            active_notes = {}  # Track {note: start_time}
+            
             for token in sequence:
                 token = token.item()
                 
@@ -507,27 +514,33 @@ class MusicGenerationLoss(nn.Module):
                     current_time += delta
                 elif self.is_note_on(token):
                     note = token - self.NOTE_ON_OFFSET
-                    note_start_times[note] = current_time
+                    active_notes[note] = current_time
                     onset_times.append(current_time)
                 elif self.is_note_off(token):
                     note = token - self.NOTE_OFF_OFFSET
-                    if note in note_start_times:
-                        duration = current_time - note_start_times[note]
+                    if note in active_notes:
+                        duration = current_time - active_notes[note]
                         durations.append(duration)
-                        del note_start_times[note]
-        
-        # Convert to tensors with safety checks
+                        del active_notes[note]
+
+        # Convert to tensors with proper handling
         if onset_times:
-            onset_times = torch.tensor(onset_times, device=device, dtype=torch.float32)
+            onset_tensor = torch.tensor(onset_times, device=device, dtype=torch.float32)
+            # Normalize onset times to be between 0 and 1
+            if onset_tensor.max() > 0:
+                onset_tensor = onset_tensor / onset_tensor.max()
         else:
-            onset_times = torch.zeros(1, device=device, dtype=torch.float32)
-            
-        if durations:
-            durations = torch.tensor(durations, device=device, dtype=torch.float32)
-        else:
-            durations = torch.zeros(1, device=device, dtype=torch.float32)
+            return None
         
-        return onset_times, durations
+        if durations:
+            duration_tensor = torch.tensor(durations, device=device, dtype=torch.float32)
+            # Normalize durations
+            if duration_tensor.max() > 0:
+                duration_tensor = duration_tensor / duration_tensor.max()
+        else:
+            return None
+
+        return onset_tensor, duration_tensor
     
     def get_rhythm_events(self, sequence):
         """Extract rhythm events from token sequence with improved safety"""
@@ -569,12 +582,10 @@ class MusicGenerationLoss(nn.Module):
         device = predictions.device
         pred_tokens = predictions.argmax(dim=-1)
         
-        # print("\nDebug Contour Extraction:")
-        # print(f"Pred tokens shape: {pred_tokens.shape}")
-        
-        # Extract pitch sequence
+        # Extract pitch sequences and intervals
         pitches = []
         intervals = []
+        current_sequence = []
         
         for sequence in pred_tokens:
             sequence_pitches = []
@@ -586,20 +597,26 @@ class MusicGenerationLoss(nn.Module):
                     if len(sequence_pitches) > 1:
                         interval = sequence_pitches[-1] - sequence_pitches[-2]
                         intervals.append(interval)
-            pitches.extend(sequence_pitches)
         
-        # Convert to tensors with safety checks
-        if pitches:
-            pitches = torch.tensor(pitches, device=device, dtype=torch.float32)
-        else:
-            pitches = torch.zeros(1, device=device, dtype=torch.float32)
+            if sequence_pitches:
+                # Normalize pitches to be between 0 and 1
+                seq_array = np.array(sequence_pitches)
+                normalized_pitches = (seq_array - seq_array.min()) / (seq_array.max() - seq_array.min() + 1e-7)
+                pitches.extend(normalized_pitches.tolist())
+                current_sequence.extend(sequence_pitches)
+
+        # Only return features if we have enough data
+        if len(pitches) > 1 and len(intervals) > 0:
+            pitch_tensor = torch.tensor(pitches, device=device, dtype=torch.float32)
+            interval_tensor = torch.tensor(intervals, device=device, dtype=torch.float32)
             
-        if intervals:
-            intervals = torch.tensor(intervals, device=device, dtype=torch.float32)
-        else:
-            intervals = torch.zeros(1, device=device, dtype=torch.float32)
+            # Normalize intervals to be between -1 and 1
+            if interval_tensor.abs().max() > 0:
+                interval_tensor = interval_tensor / (interval_tensor.abs().max() + 1e-7)
+            
+            return pitch_tensor, interval_tensor
         
-        return pitches, intervals
+        return None
     
     def get_active_notes(self, sequence):
         """Convert token sequence to list of active notes"""
@@ -648,3 +665,48 @@ class MusicGenerationLoss(nn.Module):
                 pitches.append(pitch)
                 
         return torch.tensor(pitches)
+
+    def get_note_ranges(self, sequences):
+        """Calculate pitch range context for each position"""
+        batch_size, seq_len = sequences.shape
+        note_ranges = torch.zeros((batch_size, seq_len), dtype=torch.long, device=sequences.device)
+        active_notes = torch.zeros((batch_size, 128), dtype=torch.bool, device=sequences.device)
+        
+        for i in range(seq_len):
+            tokens = sequences[:, i]
+            
+            # Update active notes
+            is_note_on = self.is_note_on_token(tokens)
+            is_note_off = self.is_note_off_token(tokens)
+            
+            if is_note_on.any():
+                notes = tokens[is_note_on] - self.tokenizer.NOTE_ON_OFFSET
+                active_notes[is_note_on, notes] = True
+            
+            if is_note_off.any():
+                notes = tokens[is_note_off] - self.tokenizer.NOTE_OFF_OFFSET
+                active_notes[is_note_off, notes] = False
+            
+            # Calculate pitch range (mean of active notes)
+            active_indices = torch.arange(128, device=sequences.device).unsqueeze(0)
+            masked_indices = active_indices * active_notes.float()
+            note_sum = torch.sum(masked_indices, dim=1)
+            note_count = torch.sum(active_notes, dim=1)
+            mean_pitch = (note_sum / note_count.clamp(min=1)).long()
+            
+            note_ranges[:, i] = mean_pitch
+        
+        return note_ranges
+
+    def _calculate_rhythmic_stability(self, tempo, notes_per_second, avg_duration):
+        """Calculate rhythmic stability (0 = unstable, 1 = very stable)"""
+        # Fast tempo and high density suggest less stability
+        tempo_factor = 1 - (tempo / 240)  # Normalize to typical max tempo
+        density_factor = 1 - min(notes_per_second / 15, 1)
+        duration_factor = min(avg_duration, 1)
+        
+        stability = (tempo_factor * 0.3 + 
+                    density_factor * 0.4 + 
+                    duration_factor * 0.3)
+        
+        return max(min(stability, 1), 0)  # Ensure result is between 0 and 1

@@ -14,6 +14,7 @@ import sys
 from accelerate import Accelerator
 import gc
 import math
+from torch.optim.lr_scheduler import LambdaLR
 
 from src.models.music_transformer import MusicTransformer
 from src.data.dataset import get_dataset, MIDITokenizer
@@ -95,27 +96,27 @@ def parse_args():
                        help='Gradient accumulation steps')
     parser.add_argument('--epochs', type=int, default=150,  # Increased for better convergence
                        help='Number of epochs')
-    parser.add_argument('--lr', type=float, default=1e-4,  # Reduced from 1e-4
+    parser.add_argument('--lr', type=float, default=2e-5,  # Reduced from 1e-4
                    help='Learning rate')
     parser.add_argument('--min_lr', type=float, default=1e-6,  # Adjusted
                     help='Minimum learning rate')
-    parser.add_argument('--warmup_steps', type=int, default=0,  # Reduced from 4000
+    parser.add_argument('--warmup_steps', type=int, default=4000,  # Increased from 0
                     help='Warmup steps')
     parser.add_argument('--weight_decay', type=float, default=0.02,  # Increased
                        help='Weight decay')
-    parser.add_argument('--label_smoothing', type=float, default=0.15,
+    parser.add_argument('--label_smoothing', type=float, default=0.2,
                        help='Label smoothing factor')
-    parser.add_argument('--grad_clip', type=float, default=1.0,
+    parser.add_argument('--grad_clip', type=float, default=0.5,
                        help='Gradient clipping')
     
     # Add new loss weighting arguments
     parser.add_argument('--token_loss_weight', type=float, default=1.0,
                        help='Weight for token prediction loss')
-    parser.add_argument('--harmony_loss_weight', type=float, default=0.3,
+    parser.add_argument('--harmony_loss_weight', type=float, default=0.5,
                        help='Weight for harmony loss')
-    parser.add_argument('--rhythm_loss_weight', type=float, default=0.3,
+    parser.add_argument('--rhythm_loss_weight', type=float, default=0.5,
                        help='Weight for rhythm loss')
-    parser.add_argument('--contour_loss_weight', type=float, default=0.2,
+    parser.add_argument('--contour_loss_weight', type=float, default=0.3,
                        help='Weight for melodic contour loss')
     
     # Add dynamic weighting arguments
@@ -162,53 +163,21 @@ def setup_logging(save_dir):
     )
     return logging.getLogger(__name__)
 
-def create_optimizer_and_scheduler(model, num_training_steps, args):
-    """Create optimizer with improved warmup scheduling"""
-    # Separate parameter groups for different learning rates
-    no_decay = ['bias', 'LayerNorm.weight', 'layer_norm.weight']
-    optimizer_grouped_parameters = [
-        {
-            'params': [p for n, p in model.named_parameters() 
-                      if not any(nd in n for nd in no_decay) and 'vit' not in n],
-            'weight_decay': args.weight_decay,
-            'lr': args.lr
-        },
-        {
-            'params': [p for n, p in model.named_parameters() 
-                      if any(nd in n for nd in no_decay) and 'vit' not in n],
-            'weight_decay': 0.0,
-            'lr': args.lr
-        },
-        {
-            'params': [p for n, p in model.named_parameters() 
-                      if not any(nd in n for nd in no_decay) and 'vit' in n],
-            'weight_decay': args.weight_decay,
-            'lr': args.lr * 0.1  # Lower learning rate for ViT
-        },
-        {
-            'params': [p for n, p in model.named_parameters() 
-                      if any(nd in n for nd in no_decay) and 'vit' in n],
-            'weight_decay': 0.0,
-            'lr': args.lr * 0.1  # Lower learning rate for ViT
-        }
-    ]
-    
-    optimizer = torch.optim.AdamW(
-        optimizer_grouped_parameters,
-        lr=args.lr,
-        betas=(0.9, 0.95),
-        eps=1e-8
-    )
-    
-    # Add cosine schedule with gradual warmup
-    def lr_lambda(current_step):
-        if current_step < args.warmup_steps:
-            return float(current_step) / float(max(1, args.warmup_steps))
-        progress = float(current_step - args.warmup_steps) / float(max(1, num_training_steps - args.warmup_steps))
-        return max(args.min_lr / args.lr, 0.5 * (1.0 + math.cos(math.pi * progress)))
-    
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-    return optimizer, scheduler
+def get_cosine_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, min_lr=1e-6):
+    """
+    Create a schedule with a learning rate that decreases following the values of the cosine function between the
+    initial lr set in the optimizer to min_lr, after a warmup period during which it increases linearly between 0 and the
+    initial lr set in the optimizer.
+    """
+    def lr_lambda(current_step: int):
+        # Warmup
+        if current_step < num_warmup_steps:
+            return float(current_step) / float(max(1, num_warmup_steps))
+        # Cosine decay
+        progress = float(current_step - num_warmup_steps) / float(max(1, num_training_steps - num_warmup_steps))
+        return max(min_lr, 0.5 * (1.0 + math.cos(math.pi * progress)))
+
+    return LambdaLR(optimizer, lr_lambda)
 
 def setup_wandb_logging(args):
     """Enhanced WandB configuration with comprehensive metrics"""
@@ -406,48 +375,6 @@ def validate(model, val_loader, criterion, accelerator, args, current_epoch, los
     avg_metrics = {k: v / total_batches for k, v in all_losses.items()}
     return avg_metrics
 
-def setup_wandb_logging(args):
-    """Enhanced WandB configuration with comprehensive metrics"""
-    run = wandb.init(
-        project=args.project_name,
-        config={
-            "model_config": {
-                "vit_model": args.vit_model,
-                "d_model": args.d_model,
-                "nhead": args.nhead,
-                "num_decoder_layers": args.num_decoder_layers,
-                "dim_feedforward": args.dim_feedforward,
-                "dropout": args.dropout,
-                "max_seq_length": args.max_seq_length
-            },
-            "training_config": {
-                "batch_size": args.batch_size,
-                "gradient_accumulation_steps": args.gradient_accumulation_steps,
-                "epochs": args.epochs,
-                "lr": args.lr,
-                "min_lr": args.min_lr,
-                "weight_decay": args.weight_decay,
-                "warmup_steps": args.warmup_steps
-            },
-            "loss_config": {
-                "token_loss_weight": args.token_loss_weight,
-                "harmony_loss_weight": args.harmony_loss_weight,
-                "rhythm_loss_weight": args.rhythm_loss_weight,
-                "contour_loss_weight": args.contour_loss_weight,
-                "use_dynamic_weighting": args.use_dynamic_weighting,
-                "weight_decay_factor": args.weight_decay_factor
-            }
-        }
-    )
-    
-    # Define metric groupings
-    wandb.define_metric("train/*", step_metric="train/step")
-    wandb.define_metric("val/*", step_metric="val/step")
-    wandb.define_metric("epoch", summary="max")
-    wandb.define_metric("epoch_*", step_metric="epoch")
-    
-    return run
-
 def create_datasets(args, logger):
     """Create training and validation datasets with proper error handling"""
     logger.info("Initializing datasets...")
@@ -625,11 +552,23 @@ def main():
     
     model.apply(initialize_weights)
     
-    # Calculate total steps for optimizer/scheduler
-    total_steps = len(train_loader) * args.epochs // args.gradient_accumulation_steps
+    # Calculate total steps for scheduler
+    total_steps = len(train_loader) * args.epochs
     
-    # Create optimizer and scheduler
-    optimizer, scheduler = create_optimizer_and_scheduler(model, total_steps, args)
+    # Create optimizer
+    optimizer = optim.AdamW(
+        model.parameters(),
+        lr=args.lr,
+        weight_decay=args.weight_decay
+    )
+    
+    # Create scheduler with warmup
+    scheduler = get_cosine_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=args.warmup_steps,
+        num_training_steps=total_steps,
+        min_lr=args.min_lr
+    )
     
     # Initialize loss weighter if using dynamic weighting
     loss_weighter = None
@@ -695,12 +634,12 @@ def main():
         if accelerator.is_main_process:
             wandb.log({
                 'epoch': epoch + 1,
-                'train/loss': train_metrics['loss'],
+                'train/loss': train_metrics['total_loss'],  # Fixed
                 'train/token_loss': train_metrics['token_loss'],
                 'train/harmony_loss': train_metrics['harmony_loss'],
                 'train/rhythm_loss': train_metrics['rhythm_loss'],
                 'train/contour_loss': train_metrics['contour_loss'],
-                'val/loss': val_metrics['loss'],
+                'val/loss': val_metrics['total_loss'],  # Fixed
                 'val/token_loss': val_metrics['token_loss'],
                 'val/harmony_loss': val_metrics['harmony_loss'],
                 'val/rhythm_loss': val_metrics['rhythm_loss'],
@@ -708,9 +647,10 @@ def main():
                 'learning_rate': scheduler.get_last_lr()[0]
             })
             
+            
             # Save best model
-            if val_metrics['loss'] < best_val_loss:
-                best_val_loss = val_metrics['loss']
+            if val_metrics['total_loss'] < best_val_loss:  # Changed from 'loss' to 'total_loss'
+                best_val_loss = val_metrics['total_loss']
                 logger.info(f"New best validation loss: {best_val_loss:.4f}")
                 accelerator.save_state(os.path.join(args.save_dir, 'best_model.pt'))
                 wandb.run.summary['best_val_loss'] = best_val_loss
@@ -722,7 +662,7 @@ def main():
                 logger.info(f"Saved checkpoint: {save_path}")
         
         # Early stopping check
-        if early_stopping(val_metrics['loss']):
+        if early_stopping(val_metrics['total_loss']):  # Changed from 'loss' to 'total_loss'
             logger.info(f"Early stopping triggered after epoch {epoch+1}")
             break
         
